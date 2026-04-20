@@ -13,7 +13,7 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
     "lucide-react": "^0.445.0",
-    "@0xchat/app-sdk": "file:../0xchat-app-sdk"
+    "@0xchat/app-sdk": "github:crayscrays/0xchat-app-sdk"
   },
   "devDependencies": {
     "@types/react": "^18.3.11",
