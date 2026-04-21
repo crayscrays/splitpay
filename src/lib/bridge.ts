@@ -1,19 +1,23 @@
-import { createAppBridge, AppBridge } from "@0xchat/app-sdk";
-import type {
-  UserProfile,
-  GroupSummary,
-  GroupMember,
-  Contact,
-  AppCard,
-} from "@0xchat/app-sdk";
+import { createAppBridge, type AppBridge } from "@0xchat/app-sdk";
+import type { UserProfile, GroupSummary, GroupMember, Contact, AppCard } from "@0xchat/app-sdk";
+import { formatAddress } from "./utils";
 
-// ---------- Mock data (for dev outside 0xChat) ----------
+// ---------- Constants ----------
 
-export const MOCK_PROFILE: UserProfile = {
-  walletAddress: "0x7fA42b1C38bD4e7d9111A4AC9a8a9C1b8E3C6aB1",
-  displayName: "You",
-  avatar: "",
-};
+const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const BASE_RPC = "https://mainnet.base.org";
+const BASE_CHAIN_ID = "0x2105"; // 8453
+const WALLET_KEY = "splitpay:wallet";
+
+declare global {
+  interface Window {
+    ethereum?: {
+      request: (args: { method: string; params?: any[] }) => Promise<any>;
+    };
+  }
+}
+
+// ---------- Social mock fallbacks (contacts only — no pre-populated groups) ----------
 
 export const MOCK_CONTACTS: Contact[] = [
   { walletAddress: "0xAA1c3F9a2bD4e00112233445566778899aABBccD", displayName: "Alice", avatar: "" },
@@ -22,47 +26,85 @@ export const MOCK_CONTACTS: Contact[] = [
   { walletAddress: "0xDD4f6F6d5fE7a3344556677889900BB22DDeeFFa", displayName: "Dana", avatar: "" },
 ];
 
-export const MOCK_GROUPS: GroupSummary[] = [
-  { id: "group-1", name: "Dinner Squad", avatar: "", memberCount: 4 },
-  { id: "group-2", name: "Bali Trip", avatar: "", memberCount: 3 },
-  { id: "group-3", name: "Apartment 4B", avatar: "", memberCount: 2 },
-];
+// ---------- On-chain helpers (Base mainnet) ----------
 
-export const MOCK_GROUP_MEMBERS: Record<string, GroupMember[]> = {
-  "group-1": [
-    { walletAddress: MOCK_PROFILE.walletAddress, displayName: "You", avatar: "", roles: ["admin"] },
-    { walletAddress: MOCK_CONTACTS[0].walletAddress, displayName: "Alice", avatar: "", roles: [] },
-    { walletAddress: MOCK_CONTACTS[1].walletAddress, displayName: "Bob", avatar: "", roles: [] },
-    { walletAddress: MOCK_CONTACTS[2].walletAddress, displayName: "Charlie", avatar: "", roles: [] },
-  ],
-  "group-2": [
-    { walletAddress: MOCK_PROFILE.walletAddress, displayName: "You", avatar: "", roles: [] },
-    { walletAddress: MOCK_CONTACTS[0].walletAddress, displayName: "Alice", avatar: "", roles: ["admin"] },
-    { walletAddress: MOCK_CONTACTS[3].walletAddress, displayName: "Dana", avatar: "", roles: [] },
-  ],
-  "group-3": [
-    { walletAddress: MOCK_PROFILE.walletAddress, displayName: "You", avatar: "", roles: [] },
-    { walletAddress: MOCK_CONTACTS[1].walletAddress, displayName: "Bob", avatar: "", roles: [] },
-  ],
-};
+async function fetchUsdcBalance(address: string): Promise<string> {
+  try {
+    const res = await fetch(BASE_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_call",
+        params: [
+          { to: USDC_BASE, data: "0x70a08231" + address.replace(/^0x/, "").padStart(64, "0") },
+          "latest",
+        ],
+      }),
+    });
+    const { result } = await res.json();
+    const raw = parseInt(result ?? "0x0", 16);
+    return (raw / 1e6).toFixed(2);
+  } catch {
+    return "0.00";
+  }
+}
 
-// ---------- Bridge wrapper with fallback ----------
+async function ensureBaseChain(): Promise<void> {
+  if (!window.ethereum) throw new Error("No wallet");
+  const chainId = await window.ethereum.request({ method: "eth_chainId" });
+  if (chainId === BASE_CHAIN_ID) return;
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: BASE_CHAIN_ID }],
+    });
+  } catch (e: any) {
+    if (e.code === 4902) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: BASE_CHAIN_ID,
+          chainName: "Base",
+          rpcUrls: [BASE_RPC],
+          nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+          blockExplorerUrls: ["https://basescan.org"],
+        }],
+      });
+    } else {
+      throw e;
+    }
+  }
+}
 
-// Detect if we're running inside an iframe with a parent that can respond.
-// If not, calls will time out — we short-circuit with mocks after a short probe.
+async function sendUsdcInjected(from: string, to: string, amountStr: string): Promise<string> {
+  await ensureBaseChain();
+  const units = BigInt(Math.round(parseFloat(amountStr) * 1_000_000));
+  const data =
+    "0xa9059cbb" +
+    to.replace(/^0x/, "").padStart(64, "0") +
+    units.toString(16).padStart(64, "0");
+  return window.ethereum!.request({
+    method: "eth_sendTransaction",
+    params: [{ from, to: USDC_BASE, data }],
+  });
+}
+
+// ---------- Bridge client ----------
+
 const IN_IFRAME = typeof window !== "undefined" && window.parent !== window;
 
 class BridgeClient {
-  private bridge: AppBridge | null = null;
-  private probed = false;
-  private live = false; // set true once any call succeeds
+  private sdkBridge: AppBridge | null = null;
+  private live = false;
 
   constructor() {
     if (typeof window !== "undefined") {
       try {
-        this.bridge = createAppBridge({ appId: "splitpay", timeout: 2500 });
+        this.sdkBridge = createAppBridge({ appId: "splitpay", timeout: 2500 });
       } catch {
-        this.bridge = null;
+        this.sdkBridge = null;
       }
     }
   }
@@ -71,74 +113,134 @@ class BridgeClient {
     return this.live;
   }
 
-  get mode(): "live" | "mock" {
-    return this.live ? "live" : "mock";
+  /** Address saved from a previous injected wallet connection. */
+  get injectedAddress(): string | null {
+    return typeof window !== "undefined" ? localStorage.getItem(WALLET_KEY) : null;
   }
 
+  get connectionState(): "live" | "injected" | "none" {
+    if (this.live) return "live";
+    if (this.injectedAddress) return "injected";
+    return "none";
+  }
+
+  // ---- Auth ----
+
+  async connectInjected(): Promise<string> {
+    if (!window.ethereum) {
+      throw new Error(
+        "No wallet detected. Install MetaMask or open in a wallet browser."
+      );
+    }
+    const accounts: string[] = await window.ethereum.request({
+      method: "eth_requestAccounts",
+    });
+    if (!accounts[0]) throw new Error("No account returned from wallet.");
+    localStorage.setItem(WALLET_KEY, accounts[0]);
+    return accounts[0];
+  }
+
+  disconnect(): void {
+    localStorage.removeItem(WALLET_KEY);
+  }
+
+  // ---- Profile ----
+
+  /** Returns null when no wallet is connected at all. */
+  async getProfileOrNull(): Promise<UserProfile | null> {
+    // 1. Try 0xChat bridge (inside iframe)
+    if (this.sdkBridge && IN_IFRAME) {
+      try {
+        const p = await this.sdkBridge.user.getProfile();
+        this.live = true;
+        return p;
+      } catch {}
+    }
+    // 2. Injected wallet (MetaMask etc.)
+    const addr = this.injectedAddress;
+    if (addr) {
+      return { walletAddress: addr, displayName: formatAddress(addr, 4), avatar: "" };
+    }
+    // 3. Not connected
+    return null;
+  }
+
+  // ---- Wallet ----
+
+  async getBalance(token = "USDC"): Promise<string> {
+    if (this.sdkBridge && IN_IFRAME) {
+      try {
+        const b = await this.sdkBridge.wallet.getBalance({ token });
+        this.live = true;
+        return b;
+      } catch {}
+    }
+    const addr = this.injectedAddress;
+    if (addr && token === "USDC") return fetchUsdcBalance(addr);
+    return "0.00";
+  }
+
+  async sendTransaction(params: { to: string; token: string; amount: string }): Promise<string> {
+    if (this.sdkBridge && IN_IFRAME) {
+      try {
+        const h = await this.sdkBridge.wallet.sendTransaction(params);
+        this.live = true;
+        return h;
+      } catch {}
+    }
+    const addr = this.injectedAddress;
+    if (!addr || !window.ethereum) throw new Error("No wallet connected.");
+    if (params.token !== "USDC") throw new Error("Only USDC is supported.");
+    return sendUsdcInjected(addr, params.to, params.amount);
+  }
+
+  // ---- Social (falls back gracefully when not in 0xChat) ----
+
   private async call<T>(fn: () => Promise<T>, fallback: T | (() => T | Promise<T>)): Promise<T> {
-    if (!this.bridge || !IN_IFRAME) {
+    if (!this.sdkBridge || !IN_IFRAME) {
       return typeof fallback === "function" ? (fallback as any)() : fallback;
     }
     try {
       const res = await fn();
       this.live = true;
-      this.probed = true;
       return res;
-    } catch (err) {
-      this.probed = true;
+    } catch {
       return typeof fallback === "function" ? (fallback as any)() : fallback;
     }
   }
 
-  // Wallet
-  getAddress = () =>
-    this.call(() => this.bridge!.wallet.getAddress(), MOCK_PROFILE.walletAddress);
+  listGroups = (): Promise<GroupSummary[]> =>
+    this.call(() => this.sdkBridge!.groups.list(), []);
 
-  getBalance = (token = "USDC") =>
-    this.call(() => this.bridge!.wallet.getBalance({ token }), "127.48");
+  getGroupMembers = (groupId: string): Promise<GroupMember[]> =>
+    this.call(() => this.sdkBridge!.groups.getMembers(groupId), []);
 
-  sendTransaction = (params: { to: string; token: string; amount: string }) =>
-    this.call<string>(
-      () => this.bridge!.wallet.sendTransaction(params),
-      // Mock tx hash — deterministic-looking
-      () =>
-        "0x" +
-        Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("")
-    );
+  listContacts = (): Promise<Contact[]> =>
+    this.call(() => this.sdkBridge!.contacts.list(), MOCK_CONTACTS);
 
-  // User
-  getProfile = () => this.call(() => this.bridge!.user.getProfile(), MOCK_PROFILE);
+  /** Resolve a wallet address to a Contact (name + avatar) via the 0xChat contacts list. Returns null outside 0xChat or if not found. */
+  async resolveContact(walletAddress: string): Promise<Contact | null> {
+    if (!this.sdkBridge || !IN_IFRAME) return null;
+    try {
+      const contacts = await this.sdkBridge.contacts.list();
+      return contacts.find((c) => c.walletAddress.toLowerCase() === walletAddress.toLowerCase()) ?? null;
+    } catch {
+      return null;
+    }
+  }
 
-  // Social
-  listGroups = () => this.call(() => this.bridge!.groups.list(), MOCK_GROUPS);
-
-  getGroupMembers = (groupId: string) =>
+  shareCardToGroup = (params: { groupId: string; channelId?: string; card: AppCard }): Promise<void> =>
     this.call(
-      () => this.bridge!.groups.getMembers(groupId),
-      () => MOCK_GROUP_MEMBERS[groupId] ?? []
-    );
-
-  listContacts = () => this.call(() => this.bridge!.contacts.list(), MOCK_CONTACTS);
-
-  // Chat
-  shareCardToGroup = (params: { groupId: string; channelId?: string; card: AppCard }) =>
-    this.call(
-      () =>
-        this.bridge!.chat.shareCardToGroup({
-          groupId: params.groupId,
-          channelId: params.channelId ?? params.groupId,
-          card: params.card,
-        }),
+      () => this.sdkBridge!.chat.shareCardToGroup({
+        groupId: params.groupId,
+        channelId: params.channelId ?? params.groupId,
+        card: params.card,
+      }),
       undefined as unknown as void
     );
 
-  // Navigation
-  openGroup = (groupId: string) => {
-    try {
-      this.bridge?.navigation.openGroup(groupId);
-    } catch {
-      /* ignore */
-    }
+  openGroup = (groupId: string): void => {
+    try { this.sdkBridge?.navigation.openGroup(groupId); } catch {}
   };
 }
 

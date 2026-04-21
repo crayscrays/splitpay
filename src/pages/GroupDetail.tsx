@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowRightLeft, Plus, Receipt, UserPlus, Users } from "lucide-react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { ArrowRightLeft, Check, Copy, ExternalLink, Plus, Receipt, Share2, UserPlus, Users, X } from "lucide-react";
 import { useSplitPay } from "@/lib/splitpay-context";
 import { Header } from "@/components/Header";
 import { MemberAvatar } from "@/components/MemberAvatar";
@@ -14,7 +14,11 @@ export function GroupDetail() {
   const { groupId = "" } = useParams();
   const sp = useSplitPay();
   const nav = useNavigate();
+  const location = useLocation();
   const [tab, setTab] = useState<Tab>("expenses");
+  const [showInvite, setShowInvite] = useState(
+    () => !!(location.state as any)?.showInvite
+  );
 
   const group = sp.getGroup(groupId);
   const myWallet = sp.profile?.walletAddress ?? "";
@@ -39,14 +43,14 @@ export function GroupDetail() {
     <div className="flex-1 flex flex-col min-h-0 relative">
       <Header
         title={group.name}
-        subtitle={`${group.members.length} members`}
+        subtitle={`${group.members.length} member${group.members.length === 1 ? "" : "s"}`}
         back="/"
       />
 
       {/* Summary header */}
       <section className="px-4 pt-4 pb-3">
         <div className="flex items-center gap-2 mb-4">
-          <div className="flex -space-x-2">
+          <div className="flex -space-x-2 flex-1">
             {group.members.slice(0, 6).map((m) => (
               <MemberAvatar
                 key={m.walletAddress}
@@ -56,12 +60,20 @@ export function GroupDetail() {
                 ring
               />
             ))}
+            {group.members.length > 6 && (
+              <span className="text-xs text-text-muted ml-2 self-center">
+                +{group.members.length - 6} more
+              </span>
+            )}
           </div>
-          {group.members.length > 6 && (
-            <span className="text-xs text-text-muted">
-              +{group.members.length - 6} more
-            </span>
-          )}
+          {/* Invite button */}
+          <button
+            onClick={() => setShowInvite(true)}
+            className="btn btn-secondary px-3 py-1.5 text-xs flex-shrink-0"
+            data-testid="button-invite"
+          >
+            <UserPlus size={13} /> Invite
+          </button>
         </div>
 
         <div className="card p-4">
@@ -127,7 +139,7 @@ export function GroupDetail() {
         {tab === "activity" && <ActivityTab group={group} />}
       </div>
 
-      {/* FAB — absolute to page container, above scroll */}
+      {/* FAB */}
       <Link
         to={`/group/${group.id}/add`}
         className="absolute bottom-4 right-4 h-14 w-14 rounded-full bg-accent text-white flex items-center justify-center shadow-lg hover:bg-accent-hover transition-colors z-20"
@@ -136,6 +148,106 @@ export function GroupDetail() {
       >
         <Plus size={22} />
       </Link>
+
+      {/* Invite sheet */}
+      {showInvite && (
+        <InviteSheet groupId={group.id} groupName={group.name} onClose={() => setShowInvite(false)} />
+      )}
+    </div>
+  );
+}
+
+function InviteSheet({
+  groupId,
+  groupName,
+  onClose,
+}: {
+  groupId: string;
+  groupName: string;
+  onClose: () => void;
+}) {
+  const sp = useSplitPay();
+  const [copied, setCopied] = useState(false);
+
+  const inviteCode = sp.makeInviteCode(groupId);
+  const base = window.location.href.split("#")[0];
+  const inviteUrl = `${base}#/join/${inviteCode}`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* fallback: show url */
+    }
+  };
+
+  const shareToChat = async () => {
+    try {
+      await sp.shareExpenseToGroup(groupId, {
+        id: "invite",
+        groupId,
+        description: `Join "${groupName}" on SplitPay`,
+        amount: 0,
+        paidBy: "",
+        splitType: "equal",
+        splits: [],
+        createdAt: new Date().toISOString(),
+      });
+    } catch {
+      /* ignore */
+    }
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-end justify-center">
+      <button
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+        aria-label="Close"
+      />
+      <div className="relative w-full max-w-[480px] bg-surface border-t border-border rounded-t-2xl fade-in">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <h3 className="font-semibold">Invite to {groupName}</h3>
+          <button onClick={onClose} className="btn btn-ghost p-1.5">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          <p className="text-sm text-text-muted">
+            Share this link — anyone who opens it will be added as a member.
+          </p>
+
+          {/* Link row */}
+          <div className="flex gap-2 items-center">
+            <div className="flex-1 bg-surface-2 border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-muted truncate">
+              {inviteUrl}
+            </div>
+            <button
+              onClick={copy}
+              className={cn(
+                "btn flex-shrink-0 px-3 py-2 text-sm transition-colors",
+                copied ? "btn-primary" : "btn-secondary"
+              )}
+              data-testid="button-copy-invite"
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+
+          {/* Share to 0xChat */}
+          <button
+            onClick={shareToChat}
+            className="btn btn-secondary w-full py-2.5 text-sm"
+            data-testid="button-share-invite"
+          >
+            <Share2 size={14} /> Share to group chat
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -155,7 +267,7 @@ function ExpensesTab({
         </div>
         <div className="text-sm font-medium text-text">No expenses yet</div>
         <div className="text-xs text-text-muted mt-1">
-          Add your first expense using the + button
+          Tap + to add the first expense
         </div>
       </div>
     );

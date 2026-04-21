@@ -9,8 +9,9 @@ import {
   type ReactNode,
 } from "react";
 import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/app-sdk";
-import { bridge, MOCK_GROUP_MEMBERS, MOCK_GROUPS, MOCK_PROFILE } from "./bridge";
-import { computeNetBalances, simplifyDebts, uid, type DebtEdge } from "./utils";
+import { bridge } from "./bridge";
+import { computeNetBalances, formatAddress, simplifyDebts, uid, type DebtEdge } from "./utils";
+import { loadGroups, saveGroups } from "./storage";
 
 // ---------- Types ----------
 
@@ -30,15 +31,20 @@ export interface Expense {
   paidBy: string;
   splitType: "equal" | "custom";
   splits: Split[];
-  createdAt: string; // ISO
+  createdAt: string;
 }
 
 export interface Activity {
   id: string;
   groupId: string;
-  type: "expense_added" | "payment_settled" | "group_joined";
+  type:
+    | "expense_added"
+    | "expense_edited"
+    | "expense_deleted"
+    | "payment_settled"
+    | "group_joined";
   message: string;
-  actor: string; // wallet
+  actor: string;
   createdAt: string;
   meta?: Record<string, any>;
 }
@@ -53,23 +59,30 @@ export interface GroupData {
   activity: Activity[];
 }
 
+export interface InviteInfo {
+  id: string;
+  name: string;
+  creator: string; // wallet address
+  creatorName?: string;
+}
+
 // ---------- State ----------
 
 interface State {
   profile: UserProfile | null;
-  balance: string; // USDC
+  balance: string;
   groups: GroupData[];
-  availableGroups: GroupSummary[]; // groups from SDK not yet added
+  availableGroups: GroupSummary[];
   loading: boolean;
-  mode: "live" | "mock" | "loading";
+  mode: "live" | "mock" | "disconnected" | "loading";
 }
 
 type Action =
   | { type: "INIT"; payload: Partial<State> }
-  | { type: "SET_GROUPS"; groups: GroupData[] }
   | { type: "SET_AVAILABLE"; groups: GroupSummary[] }
   | { type: "ADD_GROUP"; group: GroupData }
   | { type: "ADD_EXPENSE"; groupId: string; expense: Expense; activity: Activity }
+  | { type: "EDIT_EXPENSE"; groupId: string; expense: Expense; activity: Activity }
   | { type: "DELETE_EXPENSE"; groupId: string; expenseId: string; activity?: Activity }
   | {
       type: "SETTLE_SPLIT";
@@ -79,8 +92,7 @@ type Action =
       txHash: string;
       activity: Activity;
     }
-  | { type: "SET_BALANCE"; balance: string }
-  | { type: "SET_MODE"; mode: State["mode"] };
+  | { type: "SET_BALANCE"; balance: string };
 
 const initialState: State = {
   profile: null,
@@ -95,8 +107,6 @@ function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "INIT":
       return { ...state, ...action.payload, loading: false };
-    case "SET_GROUPS":
-      return { ...state, groups: action.groups };
     case "SET_AVAILABLE":
       return { ...state, availableGroups: action.groups };
     case "ADD_GROUP":
@@ -113,6 +123,21 @@ function reducer(state: State, action: Action): State {
             ? {
                 ...g,
                 expenses: [action.expense, ...g.expenses],
+                activity: [action.activity, ...g.activity],
+              }
+            : g
+        ),
+      };
+    case "EDIT_EXPENSE":
+      return {
+        ...state,
+        groups: state.groups.map((g) =>
+          g.id === action.groupId
+            ? {
+                ...g,
+                expenses: g.expenses.map((e) =>
+                  e.id === action.expense.id ? action.expense : e
+                ),
                 activity: [action.activity, ...g.activity],
               }
             : g
@@ -162,118 +187,9 @@ function reducer(state: State, action: Action): State {
       };
     case "SET_BALANCE":
       return { ...state, balance: action.balance };
-    case "SET_MODE":
-      return { ...state, mode: action.mode };
     default:
       return state;
   }
-}
-
-// ---------- Seed data ----------
-
-function seedGroups(profileWallet: string): GroupData[] {
-  // Use mock groups + members for demo so the app looks populated.
-  const groups: GroupData[] = MOCK_GROUPS.slice(0, 2).map((g) => {
-    const members = MOCK_GROUP_MEMBERS[g.id] ?? [];
-    return {
-      id: g.id,
-      name: g.name,
-      avatar: g.avatar,
-      memberCount: g.memberCount,
-      members: members.map((m) =>
-        m.displayName === "You" ? { ...m, walletAddress: profileWallet } : m
-      ),
-      expenses: [],
-      activity: [],
-    };
-  });
-
-  // Dinner Squad — a few expenses
-  const dinner = groups[0];
-  if (dinner) {
-    const you = profileWallet;
-    const alice = dinner.members[1]?.walletAddress ?? "";
-    const bob = dinner.members[2]?.walletAddress ?? "";
-    const charlie = dinner.members[3]?.walletAddress ?? "";
-    const allWallets = [you, alice, bob, charlie].filter(Boolean);
-
-    const mk = (
-      desc: string,
-      amount: number,
-      paidBy: string,
-      daysAgo: number,
-      among: string[] = allWallets
-    ): Expense => {
-      const per = Math.round((amount / among.length) * 100) / 100;
-      const created = new Date(Date.now() - daysAgo * 86400_000).toISOString();
-      return {
-        id: uid("exp"),
-        groupId: dinner.id,
-        description: desc,
-        amount,
-        paidBy,
-        splitType: "equal",
-        splits: among.map((w, i) => ({
-          wallet: w,
-          amount:
-            i === among.length - 1
-              ? Math.round((amount - per * (among.length - 1)) * 100) / 100
-              : per,
-          settled: false,
-        })),
-        createdAt: created,
-      };
-    };
-
-    dinner.expenses = [
-      mk("Ramen at Ippudo", 84.5, you, 0),
-      mk("Sake tasting", 46, alice, 1),
-      mk("Karaoke room", 120, bob, 3),
-      mk("Taxi home", 32.4, you, 3, [you, alice, bob]),
-    ];
-    dinner.activity = dinner.expenses.map((e) => ({
-      id: uid("act"),
-      groupId: dinner.id,
-      type: "expense_added",
-      message: `${e.description} · $${e.amount.toFixed(2)}`,
-      actor: e.paidBy,
-      createdAt: e.createdAt,
-    }));
-  }
-
-  // Bali Trip — 1 expense
-  const trip = groups[1];
-  if (trip) {
-    const you = profileWallet;
-    const alice = trip.members[1]?.walletAddress ?? "";
-    const dana = trip.members[2]?.walletAddress ?? "";
-    const allWallets = [you, alice, dana];
-    const amount = 240;
-    const per = 80;
-    const expense: Expense = {
-      id: uid("exp"),
-      groupId: trip.id,
-      description: "Airbnb — 3 nights",
-      amount,
-      paidBy: alice,
-      splitType: "equal",
-      splits: allWallets.map((w) => ({ wallet: w, amount: per, settled: false })),
-      createdAt: new Date(Date.now() - 5 * 86400_000).toISOString(),
-    };
-    trip.expenses = [expense];
-    trip.activity = [
-      {
-        id: uid("act"),
-        groupId: trip.id,
-        type: "expense_added",
-        message: `${expense.description} · $${amount.toFixed(2)}`,
-        actor: alice,
-        createdAt: expense.createdAt,
-      },
-    ];
-  }
-
-  return groups;
 }
 
 // ---------- Context ----------
@@ -282,6 +198,7 @@ interface SplitPayContextValue extends State {
   totalOwed: number;
   totalOwing: number;
   addExpense(input: Omit<Expense, "id" | "createdAt">): Expense;
+  editExpense(expense: Expense): void;
   deleteExpense(groupId: string, expenseId: string): void;
   settleSplit(args: {
     groupId: string;
@@ -291,11 +208,16 @@ interface SplitPayContextValue extends State {
     toWallet: string;
   }): Promise<string>;
   addGroup(group: GroupSummary): Promise<void>;
+  createGroup(name: string, members: GroupMember[]): GroupData;
+  joinGroup(invite: InviteInfo): Promise<void>;
+  makeInviteCode(groupId: string): string;
   refreshAvailableGroups(): Promise<void>;
   shareExpenseToGroup(groupId: string, expense: Expense): Promise<void>;
   getGroup(id: string): GroupData | undefined;
   computeGroupBalances(groupId: string): Record<string, number>;
   computeGroupDebts(groupId: string): DebtEdge[];
+  connectWallet(): Promise<void>;
+  disconnect(): void;
 }
 
 const Ctx = createContext<SplitPayContextValue | null>(null);
@@ -304,43 +226,52 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [booted, setBooted] = useState(false);
 
-  // Initial load
+  // Initial load — check connection state, restore wallet-keyed data
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [profile, balance] = await Promise.all([
-        bridge.getProfile(),
-        bridge.getBalance("USDC"),
-      ]);
+      const profile = await bridge.getProfileOrNull();
       if (cancelled) return;
-      const seededGroups = seedGroups(profile.walletAddress);
+
+      if (!profile) {
+        // No wallet connected — show the connect screen
+        dispatch({ type: "INIT", payload: { mode: "disconnected" } });
+        setBooted(true);
+        return;
+      }
+
+      const [balance] = await Promise.all([bridge.getBalance("USDC")]);
+      if (cancelled) return;
+
+      const saved = loadGroups(profile.walletAddress);
       dispatch({
         type: "INIT",
         payload: {
           profile,
           balance,
-          groups: seededGroups,
+          groups: saved ?? [],
           mode: bridge.isLive ? "live" : "mock",
         },
       });
       setBooted(true);
-      // Fetch available groups in background
+
       try {
         const available = await bridge.listGroups();
         if (cancelled) return;
-        const added = new Set(seededGroups.map((g) => g.id));
-        dispatch({
-          type: "SET_AVAILABLE",
-          groups: available.filter((g) => !added.has(g.id)),
-        });
+        const added = new Set((saved ?? []).map((g) => g.id));
+        dispatch({ type: "SET_AVAILABLE", groups: available.filter((g) => !added.has(g.id)) });
       } catch {
         /* ignore */
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
+
+  // Persist groups to localStorage, keyed by wallet
+  useEffect(() => {
+    if (!booted || !state.profile) return;
+    saveGroups(state.profile.walletAddress, state.groups);
+  }, [state.groups, state.profile, booted]);
 
   const addExpense: SplitPayContextValue["addExpense"] = useCallback((input) => {
     const expense: Expense = {
@@ -360,12 +291,24 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     return expense;
   }, []);
 
+  const editExpense: SplitPayContextValue["editExpense"] = useCallback((expense) => {
+    const activity: Activity = {
+      id: uid("act"),
+      groupId: expense.groupId,
+      type: "expense_edited",
+      message: `${expense.description} updated · $${expense.amount.toFixed(2)}`,
+      actor: expense.paidBy,
+      createdAt: new Date().toISOString(),
+    };
+    dispatch({ type: "EDIT_EXPENSE", groupId: expense.groupId, expense, activity });
+  }, []);
+
   const deleteExpense: SplitPayContextValue["deleteExpense"] = useCallback(
     (groupId, expenseId) => {
       const activity: Activity = {
         id: uid("act"),
         groupId,
-        type: "expense_added",
+        type: "expense_deleted",
         message: "Expense removed",
         actor: "",
         createdAt: new Date().toISOString(),
@@ -391,14 +334,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
         meta: { txHash, toWallet, amount },
       };
-      dispatch({
-        type: "SETTLE_SPLIT",
-        groupId,
-        expenseId,
-        wallet,
-        txHash,
-        activity,
-      });
+      dispatch({ type: "SETTLE_SPLIT", groupId, expenseId, wallet, txHash, activity });
       return txHash;
     },
     []
@@ -426,6 +362,100 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     };
     dispatch({ type: "ADD_GROUP", group: newGroup });
   }, []);
+
+  const createGroup: SplitPayContextValue["createGroup"] = useCallback(
+    (name, members) => {
+      const id = uid("grp");
+      const newGroup: GroupData = {
+        id,
+        name,
+        avatar: "",
+        memberCount: members.length,
+        members,
+        expenses: [],
+        activity: [
+          {
+            id: uid("act"),
+            groupId: id,
+            type: "group_joined",
+            message: "Group created",
+            actor: members.find((m) => m.roles?.includes("admin"))?.walletAddress ?? "",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      };
+      dispatch({ type: "ADD_GROUP", group: newGroup });
+      return newGroup;
+    },
+    []
+  );
+
+  const joinGroup: SplitPayContextValue["joinGroup"] = useCallback(
+    async (invite) => {
+      if (state.groups.some((g) => g.id === invite.id)) return;
+      const myWallet = state.profile?.walletAddress ?? "";
+
+      // Resolve creator name: invite embed > 0xChat contact lookup > truncated address
+      let creatorName = invite.creatorName ?? null;
+      let creatorAvatar = "";
+      if (!creatorName) {
+        const contact = await bridge.resolveContact(invite.creator);
+        if (contact) {
+          creatorName = contact.displayName;
+          creatorAvatar = contact.avatar;
+        }
+      }
+
+      const newGroup: GroupData = {
+        id: invite.id,
+        name: invite.name,
+        avatar: "",
+        memberCount: 2,
+        members: [
+          {
+            walletAddress: invite.creator,
+            displayName: creatorName ?? formatAddress(invite.creator, 4),
+            avatar: creatorAvatar,
+            roles: ["admin"],
+          },
+          {
+            walletAddress: myWallet,
+            displayName: state.profile?.displayName ?? "You",
+            avatar: state.profile?.avatar ?? "",
+            roles: [],
+          },
+        ],
+        expenses: [],
+        activity: [
+          {
+            id: uid("act"),
+            groupId: invite.id,
+            type: "group_joined",
+            message: "You joined the group",
+            actor: myWallet,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      };
+      dispatch({ type: "ADD_GROUP", group: newGroup });
+    },
+    [state.groups, state.profile]
+  );
+
+  const makeInviteCode: SplitPayContextValue["makeInviteCode"] = useCallback(
+    (groupId) => {
+      const group = state.groups.find((g) => g.id === groupId);
+      if (!group) return "";
+      const info: InviteInfo = {
+        id: group.id,
+        name: group.name,
+        creator: state.profile?.walletAddress ?? "",
+        creatorName: state.profile?.displayName ?? undefined,
+      };
+      return btoa(JSON.stringify(info));
+    },
+    [state.groups, state.profile]
+  );
 
   const refreshAvailableGroups: SplitPayContextValue["refreshAvailableGroups"] = useCallback(
     async () => {
@@ -477,7 +507,6 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     [computeGroupBalances]
   );
 
-  // Aggregate owed/owing across all groups for current user
   const { totalOwed, totalOwing } = useMemo(() => {
     const me = state.profile?.walletAddress;
     if (!me) return { totalOwed: 0, totalOwing: 0 };
@@ -495,19 +524,51 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     };
   }, [state.groups, state.profile?.walletAddress]);
 
+  const connectWallet = useCallback(async () => {
+    const address = await bridge.connectInjected();
+    const [profile, balance] = await Promise.all([
+      bridge.getProfileOrNull(),
+      bridge.getBalance("USDC"),
+    ]);
+    if (!profile) throw new Error("Failed to load profile.");
+    const saved = loadGroups(address);
+    dispatch({
+      type: "INIT",
+      payload: { profile, balance, groups: saved ?? [], mode: "mock" },
+    });
+    setBooted(true);
+    try {
+      const available = await bridge.listGroups();
+      const added = new Set((saved ?? []).map((g) => g.id));
+      dispatch({ type: "SET_AVAILABLE", groups: available.filter((g) => !added.has(g.id)) });
+    } catch {}
+  }, []);
+
+  const disconnect = useCallback(() => {
+    bridge.disconnect();
+    dispatch({ type: "INIT", payload: { profile: null, groups: [], mode: "disconnected" } });
+    setBooted(false);
+  }, []);
+
   const value: SplitPayContextValue = {
     ...state,
     totalOwed,
     totalOwing,
     addExpense,
+    editExpense,
     deleteExpense,
     settleSplit,
     addGroup,
+    createGroup,
+    joinGroup,
+    makeInviteCode,
     refreshAvailableGroups,
     shareExpenseToGroup,
     getGroup,
     computeGroupBalances,
     computeGroupDebts,
+    connectWallet,
+    disconnect,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

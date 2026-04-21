@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Check, DollarSign, Users as UsersIcon } from "lucide-react";
 import { useSplitPay } from "@/lib/splitpay-context";
@@ -8,11 +8,14 @@ import { MemberPicker } from "@/components/MemberPicker";
 import { cn, splitEvenly } from "@/lib/utils";
 
 export function AddExpense() {
-  const { groupId = "" } = useParams();
+  const { groupId = "", expenseId } = useParams();
   const sp = useSplitPay();
   const nav = useNavigate();
   const group = sp.getGroup(groupId);
   const myWallet = sp.profile?.walletAddress ?? "";
+
+  const isEditing = !!expenseId;
+  const existingExpense = isEditing ? group?.expenses.find((e) => e.id === expenseId) : undefined;
 
   const [description, setDescription] = useState("");
   const [amountStr, setAmountStr] = useState("");
@@ -22,10 +25,24 @@ export function AddExpense() {
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   const [shareToChat, setShareToChat] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const initialized = useRef(false);
 
-  // Initialize selection to all members once group loads
+  // Initialize form — for edit mode pre-fill from existing expense
   useEffect(() => {
-    if (group && selected.size === 0) {
+    if (!group || initialized.current) return;
+    initialized.current = true;
+    if (existingExpense) {
+      setDescription(existingExpense.description);
+      setAmountStr(existingExpense.amount.toString());
+      setPaidBy(existingExpense.paidBy);
+      setSplitType(existingExpense.splitType);
+      setSelected(new Set(existingExpense.splits.map((s) => s.wallet)));
+      const amounts: Record<string, string> = {};
+      existingExpense.splits.forEach((s) => {
+        amounts[s.wallet] = s.amount.toString();
+      });
+      setCustomAmounts(amounts);
+    } else {
       setSelected(new Set(group.members.map((m) => m.walletAddress)));
     }
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -45,8 +62,17 @@ export function AddExpense() {
   if (!group) {
     return (
       <div className="flex-1 flex flex-col">
-        <Header title="Add expense" back />
+        <Header title={isEditing ? "Edit expense" : "Add expense"} back />
         <div className="p-8 text-center text-text-muted">Group not found.</div>
+      </div>
+    );
+  }
+
+  if (isEditing && !existingExpense) {
+    return (
+      <div className="flex-1 flex flex-col">
+        <Header title="Edit expense" back={`/group/${groupId}`} />
+        <div className="p-8 text-center text-text-muted">Expense not found.</div>
       </div>
     );
   }
@@ -83,24 +109,42 @@ export function AddExpense() {
               settled: false,
             }));
 
-      const expense = sp.addExpense({
-        groupId: group.id,
-        description: description.trim(),
-        amount,
-        paidBy,
-        splitType,
-        splits,
-      });
-
-      if (shareToChat) {
-        try {
-          await sp.shareExpenseToGroup(group.id, expense);
-        } catch {
-          /* ignore */
+      if (isEditing && existingExpense) {
+        const hasSettled = existingExpense.splits.some((s) => s.settled);
+        if (
+          hasSettled &&
+          !confirm("Editing this expense will reset all settlement records. Continue?")
+        ) {
+          setSubmitting(false);
+          return;
         }
+        sp.editExpense({
+          ...existingExpense,
+          description: description.trim(),
+          amount,
+          paidBy,
+          splitType,
+          splits,
+        });
+        nav(`/group/${group.id}/expense/${existingExpense.id}`);
+      } else {
+        const expense = sp.addExpense({
+          groupId: group.id,
+          description: description.trim(),
+          amount,
+          paidBy,
+          splitType,
+          splits,
+        });
+        if (shareToChat) {
+          try {
+            await sp.shareExpenseToGroup(group.id, expense);
+          } catch {
+            /* ignore */
+          }
+        }
+        nav(`/group/${group.id}`);
       }
-
-      nav(`/group/${group.id}`);
     } finally {
       setSubmitting(false);
     }
@@ -109,9 +153,9 @@ export function AddExpense() {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <Header
-        title="Add expense"
+        title={isEditing ? "Edit expense" : "Add expense"}
         subtitle={group.name}
-        back={`/group/${group.id}`}
+        back={isEditing ? `/group/${group.id}/expense/${expenseId}` : `/group/${group.id}`}
       />
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
@@ -270,32 +314,34 @@ export function AddExpense() {
           )}
         </div>
 
-        {/* Share toggle */}
-        <label className="flex items-center gap-3 p-3 rounded-lg border border-border bg-surface-2 cursor-pointer">
-          <div
-            className={cn(
-              "h-5 w-5 rounded-md border flex items-center justify-center flex-shrink-0",
-              shareToChat
-                ? "bg-accent border-accent text-white"
-                : "border-border-strong"
-            )}
-          >
-            {shareToChat && <Check size={12} strokeWidth={3} />}
-          </div>
-          <input
-            type="checkbox"
-            className="sr-only"
-            checked={shareToChat}
-            onChange={(e) => setShareToChat(e.target.checked)}
-            data-testid="toggle-share"
-          />
-          <div className="text-sm">
-            <div className="font-medium text-text">Share to group chat</div>
-            <div className="text-xs text-text-muted">
-              Post as a card in {group.name}
+        {/* Share toggle — only shown when adding new expenses */}
+        {!isEditing && (
+          <label className="flex items-center gap-3 p-3 rounded-lg border border-border bg-surface-2 cursor-pointer">
+            <div
+              className={cn(
+                "h-5 w-5 rounded-md border flex items-center justify-center flex-shrink-0",
+                shareToChat
+                  ? "bg-accent border-accent text-white"
+                  : "border-border-strong"
+              )}
+            >
+              {shareToChat && <Check size={12} strokeWidth={3} />}
             </div>
-          </div>
-        </label>
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={shareToChat}
+              onChange={(e) => setShareToChat(e.target.checked)}
+              data-testid="toggle-share"
+            />
+            <div className="text-sm">
+              <div className="font-medium text-text">Share to group chat</div>
+              <div className="text-xs text-text-muted">
+                Post as a card in {group.name}
+              </div>
+            </div>
+          </label>
+        )}
       </div>
 
       {/* Submit */}
@@ -306,7 +352,13 @@ export function AddExpense() {
           className="btn btn-primary w-full py-3 text-sm font-semibold"
           data-testid="button-submit"
         >
-          {submitting ? "Adding…" : "Add expense"}
+          {submitting
+            ? isEditing
+              ? "Saving…"
+              : "Adding…"
+            : isEditing
+            ? "Save changes"
+            : "Add expense"}
         </button>
       </div>
     </div>

@@ -23,7 +23,7 @@ export function BalanceCard({ member, netAmount, myWallet, onSettle, canSettle }
           {isMe ? "You" : member.displayName}
         </div>
         <div className="text-xs text-text-dim font-mono">
-          {formatAddress(member.walletAddress)}
+          {formatAddress(member.walletAddress, 4)}
         </div>
       </div>
       <div className="text-right flex-shrink-0">

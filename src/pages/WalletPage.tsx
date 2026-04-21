@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, Wallet as WalletIcon } from "lucide-react";
+import { Copy, ExternalLink, LogOut, Wallet as WalletIcon } from "lucide-react";
 import { useState } from "react";
 import { useSplitPay } from "@/lib/splitpay-context";
 import { Header } from "@/components/Header";
@@ -15,9 +15,7 @@ export function WalletPage() {
       await navigator.clipboard.writeText(addr);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   };
 
   return (
@@ -25,6 +23,7 @@ export function WalletPage() {
       <Header title="Wallet" subtitle="USDC on Base" />
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {/* Balance card */}
         <div className="card p-5">
           <div className="flex items-center gap-3">
             <MemberAvatar
@@ -52,17 +51,19 @@ export function WalletPage() {
             </div>
           </div>
           <div className="text-xs text-text-muted mt-1 inline-flex items-center gap-1">
-            <WalletIcon size={11} /> Base mainnet · chain 8453
+            <WalletIcon size={11} /> Base mainnet · USDC
           </div>
         </div>
 
+        {/* Connection info */}
         <div className="card p-4">
           <div className="text-sm font-medium text-text mb-1">
-            Embedded wallet
+            {sp.mode === "live" ? "0xChat wallet" : "Connected wallet"}
           </div>
           <div className="text-xs text-text-muted leading-relaxed">
-            SplitPay uses your 0xChat embedded wallet. All payments are approved
-            through 0xChat — SplitPay never sees your keys.
+            {sp.mode === "live"
+              ? "Using your 0xChat embedded wallet. Payments are approved through 0xChat — SplitPay never sees your keys."
+              : "Using an injected wallet (MetaMask or similar). Transactions require your approval in the wallet extension."}
           </div>
         </div>
 
@@ -75,9 +76,16 @@ export function WalletPage() {
           View on BaseScan <ExternalLink size={13} />
         </a>
 
-        <div className="text-center text-xs text-text-dim">
-          {sp.mode === "mock" ? "Running in demo mode" : "Connected to 0xChat"}
-        </div>
+        {/* Disconnect — only shown for injected wallets, not 0xChat bridge */}
+        {sp.mode !== "live" && (
+          <button
+            onClick={() => sp.disconnect()}
+            className="btn btn-ghost w-full py-2.5 text-sm text-text-muted hover:text-negative"
+            data-testid="button-disconnect"
+          >
+            <LogOut size={14} /> Disconnect wallet
+          </button>
+        )}
       </div>
     </div>
   );

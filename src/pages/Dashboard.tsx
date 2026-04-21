@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Plus, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { Plus, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
 import { useSplitPay } from "@/lib/splitpay-context";
 import { MemberAvatar } from "@/components/MemberAvatar";
 import { GroupCard } from "@/components/GroupCard";
+import { GroupSheet } from "@/components/GroupSheet";
 import { computeNetBalances, formatAddress, formatCurrency, formatUsdc } from "@/lib/utils";
-import type { GroupSummary } from "@0xchat/app-sdk";
 
 export function Dashboard() {
   const sp = useSplitPay();
@@ -18,14 +18,6 @@ export function Dashboard() {
       return { group: g, netBalance: bal[myWallet] ?? 0 };
     });
   }, [sp.groups, myWallet]);
-
-  if (sp.loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="text-text-muted text-sm">Loading…</div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex-1 pb-4 overflow-y-auto min-h-0">
@@ -47,11 +39,6 @@ export function Dashboard() {
               {formatAddress(myWallet, 5)}
             </div>
           </div>
-          {sp.mode === "mock" && (
-            <span className="chip bg-surface-2 border border-border text-text-dim text-[10px]">
-              demo mode
-            </span>
-          )}
         </div>
 
         {/* USDC balance */}
@@ -107,12 +94,19 @@ export function Dashboard() {
 
         {groupsWithBal.length === 0 ? (
           <div className="card p-8 text-center">
-            <div className="text-text-muted text-sm">No groups yet.</div>
+            <div className="inline-flex h-12 w-12 rounded-full bg-surface-2 items-center justify-center mb-3">
+              <Users size={20} className="text-text-muted" />
+            </div>
+            <div className="text-sm font-medium text-text">No groups yet</div>
+            <div className="text-xs text-text-muted mt-1 mb-4">
+              Create a group and invite your friends to start splitting
+            </div>
             <button
               onClick={() => setShowPicker(true)}
-              className="btn btn-primary mt-4 px-4 py-2 text-sm"
+              className="btn btn-primary px-5 py-2.5 text-sm font-semibold"
+              data-testid="button-create-first-group"
             >
-              <Plus size={14} /> Link a group
+              <Plus size={14} /> Create a group
             </button>
           </div>
         ) : (
@@ -129,73 +123,7 @@ export function Dashboard() {
         )}
       </section>
 
-      {showPicker && <AddGroupSheet onClose={() => setShowPicker(false)} />}
-    </div>
-  );
-}
-
-function AddGroupSheet({ onClose }: { onClose: () => void }) {
-  const sp = useSplitPay();
-  const [adding, setAdding] = useState<string | null>(null);
-
-  const add = async (g: GroupSummary) => {
-    setAdding(g.id);
-    try {
-      await sp.addGroup(g);
-      onClose();
-    } finally {
-      setAdding(null);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center">
-      <button
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-        aria-label="Close"
-      />
-      <div
-        className="relative w-full max-w-[480px] bg-surface border-t border-border rounded-t-2xl max-h-[70vh] flex flex-col fade-in"
-        data-testid="sheet-add-group"
-      >
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-          <h3 className="font-semibold">Link a group</h3>
-          <button onClick={onClose} className="btn btn-ghost text-sm px-3 py-1">
-            Close
-          </button>
-        </div>
-        <div className="p-4 overflow-y-auto space-y-2">
-          {sp.availableGroups.length === 0 ? (
-            <div className="text-center py-8 text-sm text-text-muted">
-              No other groups available to link.
-            </div>
-          ) : (
-            sp.availableGroups.map((g) => (
-              <button
-                key={g.id}
-                onClick={() => add(g)}
-                disabled={adding !== null}
-                className="w-full card p-3 flex items-center gap-3 hover:border-border-strong text-left"
-                data-testid={`add-available-${g.id}`}
-              >
-                <MemberAvatar name={g.name} wallet={g.id} size="md" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate">{g.name}</div>
-                  <div className="text-xs text-text-muted">
-                    {g.memberCount} member{g.memberCount === 1 ? "" : "s"}
-                  </div>
-                </div>
-                {adding === g.id ? (
-                  <span className="text-xs text-text-muted">Adding…</span>
-                ) : (
-                  <Plus size={16} className="text-text-muted" />
-                )}
-              </button>
-            ))
-          )}
-        </div>
-      </div>
+      {showPicker && <GroupSheet onClose={() => setShowPicker(false)} />}
     </div>
   );
 }

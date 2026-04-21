@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { Check, ExternalLink, Share2, Trash2 } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { Check, ExternalLink, Pencil, Share2, Trash2 } from "lucide-react";
 import { useSplitPay } from "@/lib/splitpay-context";
 import { Header } from "@/components/Header";
 import { MemberAvatar } from "@/components/MemberAvatar";
@@ -139,6 +139,14 @@ export function ExpenseDetail() {
 
         {/* Actions */}
         <div className="flex gap-2">
+          <Link
+            to={`/group/${group.id}/expense/${expense.id}/edit`}
+            className="btn btn-secondary px-3 py-2.5 text-sm"
+            data-testid="button-edit"
+            aria-label="Edit"
+          >
+            <Pencil size={14} />
+          </Link>
           <button
             onClick={handleShare}
             disabled={sharing || shared}
