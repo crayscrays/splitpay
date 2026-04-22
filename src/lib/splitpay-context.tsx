@@ -74,7 +74,7 @@ interface State {
   groups: GroupData[];
   availableGroups: GroupSummary[];
   loading: boolean;
-  mode: "live" | "mock" | "disconnected" | "loading";
+  mode: "live" | "disconnected" | "loading";
 }
 
 type Action =
@@ -216,7 +216,6 @@ interface SplitPayContextValue extends State {
   getGroup(id: string): GroupData | undefined;
   computeGroupBalances(groupId: string): Record<string, number>;
   computeGroupDebts(groupId: string): DebtEdge[];
-  connectWallet(): Promise<void>;
   disconnect(): void;
 }
 
@@ -250,7 +249,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
           profile,
           balance,
           groups: saved ?? [],
-          mode: bridge.isLive ? "live" : "mock",
+          mode: "live",
         },
       });
       setBooted(true);
@@ -524,28 +523,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     };
   }, [state.groups, state.profile?.walletAddress]);
 
-  const connectWallet = useCallback(async () => {
-    const address = await bridge.connectInjected();
-    const [profile, balance] = await Promise.all([
-      bridge.getProfileOrNull(),
-      bridge.getBalance("USDC"),
-    ]);
-    if (!profile) throw new Error("Failed to load profile.");
-    const saved = loadGroups(address);
-    dispatch({
-      type: "INIT",
-      payload: { profile, balance, groups: saved ?? [], mode: "mock" },
-    });
-    setBooted(true);
-    try {
-      const available = await bridge.listGroups();
-      const added = new Set((saved ?? []).map((g) => g.id));
-      dispatch({ type: "SET_AVAILABLE", groups: available.filter((g) => !added.has(g.id)) });
-    } catch {}
-  }, []);
-
   const disconnect = useCallback(() => {
-    bridge.disconnect();
     dispatch({ type: "INIT", payload: { profile: null, groups: [], mode: "disconnected" } });
     setBooted(false);
   }, []);
@@ -567,7 +545,6 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     getGroup,
     computeGroupBalances,
     computeGroupDebts,
-    connectWallet,
     disconnect,
   };
 

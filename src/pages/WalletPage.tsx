@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, LogOut, Wallet as WalletIcon } from "lucide-react";
+import { Copy, ExternalLink, Wallet as WalletIcon } from "lucide-react";
 import { useState } from "react";
 import { useSplitPay } from "@/lib/splitpay-context";
 import { Header } from "@/components/Header";
@@ -76,16 +76,7 @@ export function WalletPage() {
           View on BaseScan <ExternalLink size={13} />
         </a>
 
-        {/* Disconnect — only shown for injected wallets, not 0xChat bridge */}
-        {sp.mode !== "live" && (
-          <button
-            onClick={() => sp.disconnect()}
-            className="btn btn-ghost w-full py-2.5 text-sm text-text-muted hover:text-negative"
-            data-testid="button-disconnect"
-          >
-            <LogOut size={14} /> Disconnect wallet
-          </button>
-        )}
+
       </div>
     </div>
   );
