@@ -254,7 +254,7 @@ interface SplitPayContextValue extends State {
     toWallet: string;
   }): Promise<string>;
   addGroup(group: GroupSummary): Promise<void>;
-  createGroup(name: string, members: GroupMember[]): GroupData;
+  createGroup(name: string, members: GroupMember[]): Promise<GroupData>;
   joinGroup(invite: InviteInfo): Promise<void>;
   makeInviteCode(groupId: string): string; // returns the 6-char code
   makeInviteUrl(groupId: string): string;  // returns the full shareable URL
@@ -502,13 +502,13 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       ],
       inviteCode: code,
     };
-    publishGroup({ id: newGroup.id, name: newGroup.name, avatar: newGroup.avatar, inviteCode: code });
+    await publishGroup({ id: newGroup.id, name: newGroup.name, avatar: newGroup.avatar, inviteCode: code });
     members.forEach((m) => publishMember(summary.id, m));
     dispatch({ type: "ADD_GROUP", group: newGroup });
   }, []);
 
   const createGroup: SplitPayContextValue["createGroup"] = useCallback(
-    (name, members) => {
+    async (name, members) => {
       const id = uid("grp");
       const code = genCode();
       const admin = members.find((m) => m.roles?.includes("admin"));
@@ -538,7 +538,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         ],
         inviteCode: code,
       };
-      publishGroup({ id, name, avatar: "", inviteCode: code });
+      await publishGroup({ id, name, avatar: "", inviteCode: code });
       members.forEach((m) => publishMember(id, m));
       dispatch({ type: "ADD_GROUP", group: newGroup });
       return newGroup;
@@ -573,8 +573,8 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         avatar: state.profile?.avatar ?? "",
         roles: [],
       };
-      // Publish group record and joiner to Supabase
-      publishGroup({ id: invite.id, name: invite.name, avatar: "", inviteCode: code });
+      // Publish group record first, then member (FK ordering)
+      await publishGroup({ id: invite.id, name: invite.name, avatar: "", inviteCode: code });
       publishMember(invite.id, joinerMember);
 
       // Merge remote members with known creator, deduplicating by wallet

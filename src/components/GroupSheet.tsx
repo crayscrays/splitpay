@@ -116,10 +116,10 @@ function CreateView({ onClose, onBack }: { onClose: () => void; onBack: () => vo
     return () => clearTimeout(t);
   }, []);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!name.trim()) return;
     const myWallet = sp.profile?.walletAddress ?? "";
-    const group = sp.createGroup(name.trim(), [
+    const group = await sp.createGroup(name.trim(), [
       {
         walletAddress: myWallet,
         displayName: sp.profile?.displayName ?? "You",
