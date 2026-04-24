@@ -9,11 +9,12 @@
     "preview": "vite preview --port 5175"
   },
   "dependencies": {
+    "@0xchat/app-sdk": "github:crayscrays/0xchat-app-sdk",
+    "@supabase/supabase-js": "^2.104.1",
+    "lucide-react": "^0.445.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2",
-    "lucide-react": "^0.445.0",
-    "@0xchat/app-sdk": "github:crayscrays/0xchat-app-sdk"
+    "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
     "@types/react": "^18.3.11",

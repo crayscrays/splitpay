@@ -4,7 +4,7 @@ import { Users } from "lucide-react";
 import { useSplitPay, type InviteInfo } from "@/lib/splitpay-context";
 import { Header } from "@/components/Header";
 import { MemberAvatar } from "@/components/MemberAvatar";
-import { formatAddress, resolveCode, storeCode } from "@/lib/utils";
+import { formatAddress, resolveCodeRemote, storeCode } from "@/lib/utils";
 
 export function JoinGroup() {
   const { inviteCode: codeParam = "" } = useParams();
@@ -38,14 +38,14 @@ export function JoinGroup() {
       }
     }
 
-    // Fall back to locally cached data (same device / previously clicked the full link)
-    const cached = resolveCode(codeParam);
-    if (cached?.id && cached?.name && cached?.creator) {
-      setInvite(cached as InviteInfo);
-      return;
-    }
-
-    setError("Invite code not found. Ask the group creator to share the invite link from the app.");
+    // Fall back: localStorage first, then API (cross-device)
+    resolveCodeRemote(codeParam).then((cached) => {
+      if (cached?.id && cached?.name && cached?.creator) {
+        setInvite(cached as InviteInfo);
+      } else {
+        setError("Invite code not found. Make sure you entered it correctly.");
+      }
+    });
   }, [codeParam, searchParams]);
 
   // If already a member, go straight to the group

@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/app-sdk";
 import { bridge } from "./bridge";
-import { computeNetBalances, formatAddress, genCode, simplifyDebts, storeCode, uid, type DebtEdge } from "./utils";
+import { computeNetBalances, formatAddress, genCode, publishCode, simplifyDebts, storeCode, uid, type DebtEdge } from "./utils";
 import { loadGroups, saveGroups } from "./storage";
 
 // ---------- Types ----------
@@ -347,6 +347,15 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
 
   const addGroup: SplitPayContextValue["addGroup"] = useCallback(async (summary) => {
     const members = await bridge.getGroupMembers(summary.id);
+    const code = genCode();
+    const admin = members.find((m) => m.roles?.includes("admin")) ?? members[0];
+    publishCode(code, {
+      id: summary.id,
+      name: summary.name,
+      creator: admin?.walletAddress ?? "",
+      creatorName: admin?.displayName,
+      inviteCode: code,
+    });
     const newGroup: GroupData = {
       id: summary.id,
       name: summary.name,
@@ -364,7 +373,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
           createdAt: new Date().toISOString(),
         },
       ],
-      inviteCode: genCode(),
+      inviteCode: code,
     };
     dispatch({ type: "ADD_GROUP", group: newGroup });
   }, []);
@@ -373,6 +382,14 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     (name, members) => {
       const id = uid("grp");
       const code = genCode();
+      const admin = members.find((m) => m.roles?.includes("admin"));
+      publishCode(code, {
+        id,
+        name,
+        creator: admin?.walletAddress ?? "",
+        creatorName: admin?.displayName,
+        inviteCode: code,
+      });
       const newGroup: GroupData = {
         id,
         name,
@@ -386,7 +403,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
             groupId: id,
             type: "group_joined",
             message: "Group created",
-            actor: members.find((m) => m.roles?.includes("admin"))?.walletAddress ?? "",
+            actor: admin?.walletAddress ?? "",
             createdAt: new Date().toISOString(),
           },
         ],
@@ -415,7 +432,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       }
 
       const code = invite.inviteCode ?? genCode();
-      storeCode(code, invite);
+      publishCode(code, invite);
       const newGroup: GroupData = {
         id: invite.id,
         name: invite.name,
@@ -472,7 +489,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         creatorName: state.profile?.displayName ?? undefined,
         inviteCode: group.inviteCode,
       };
-      storeCode(group.inviteCode, info);
+      publishCode(group.inviteCode, info);
       const data = encodeURIComponent(btoa(JSON.stringify(info)));
       const base = window.location.href.split("#")[0];
       return `${base}#/join/${group.inviteCode}?d=${data}`;
