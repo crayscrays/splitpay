@@ -15,15 +15,24 @@ export const MOCK_CONTACTS: Contact[] = [
 
 // ---------- Bridge client ----------
 
+const TOKEN_ADDRESSES: Record<string, string> = {
+  USDC: USDC_BASE_SEPOLIA,
+};
+
 class BridgeClient {
   private sdkBridge: AppBridge | null = null;
+  private txBridge: AppBridge | null = null;
 
   constructor() {
     if (typeof window !== "undefined") {
       try {
+        // Short timeout for profile/balance calls — fails fast when not in 0xChat
         this.sdkBridge = createAppBridge({ appId: "splitpay", timeout: 2500 });
+        // Long timeout for transactions — user needs time to approve the signing prompt
+        this.txBridge = createAppBridge({ appId: "splitpay", timeout: 60000 });
       } catch {
         this.sdkBridge = null;
+        this.txBridge = null;
       }
     }
   }
@@ -51,8 +60,11 @@ class BridgeClient {
   }
 
   async sendTransaction(params: { to: string; token: string; amount: string }): Promise<string> {
-    if (!this.sdkBridge) throw new Error("Not connected to 0xChat.");
-    return this.sdkBridge.wallet.sendTransaction(params);
+    const bridge = this.txBridge ?? this.sdkBridge;
+    if (!bridge) throw new Error("Not connected to 0xChat.");
+    // Resolve token symbol to contract address if needed
+    const token = TOKEN_ADDRESSES[params.token] ?? params.token;
+    return bridge.wallet.sendTransaction({ ...params, token });
   }
 
   // ---- Social (falls back gracefully when not in 0xChat) ----
