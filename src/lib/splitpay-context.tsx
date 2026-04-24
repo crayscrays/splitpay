@@ -12,6 +12,7 @@ import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/app-sdk";
 import { bridge } from "./bridge";
 import { computeNetBalances, formatAddress, genCode, publishCode, simplifyDebts, storeCode, uid, type DebtEdge } from "./utils";
 import { loadGroups, saveGroups } from "./storage";
+import { fetchMembers, publishMember, supabase } from "./supabase";
 
 // ---------- Types ----------
 
@@ -83,6 +84,7 @@ type Action =
   | { type: "INIT"; payload: Partial<State> }
   | { type: "SET_AVAILABLE"; groups: GroupSummary[] }
   | { type: "ADD_GROUP"; group: GroupData }
+  | { type: "SYNC_MEMBERS"; groupId: string; member: GroupMember }
   | { type: "ADD_EXPENSE"; groupId: string; expense: Expense; activity: Activity }
   | { type: "EDIT_EXPENSE"; groupId: string; expense: Expense; activity: Activity }
   | { type: "DELETE_EXPENSE"; groupId: string; expenseId: string; activity?: Activity }
@@ -116,6 +118,22 @@ function reducer(state: State, action: Action): State {
         ...state,
         groups: [...state.groups, action.group],
         availableGroups: state.availableGroups.filter((g) => g.id !== action.group.id),
+      };
+    case "SYNC_MEMBERS":
+      return {
+        ...state,
+        groups: state.groups.map((g) => {
+          if (g.id !== action.groupId) return g;
+          const already = g.members.some(
+            (m) => m.walletAddress === action.member.walletAddress
+          );
+          if (already) return g;
+          return {
+            ...g,
+            members: [...g.members, action.member],
+            memberCount: g.memberCount + 1,
+          };
+        }),
       };
     case "ADD_EXPENSE":
       return {
@@ -278,6 +296,44 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     saveGroups(state.profile.walletAddress, state.groups);
   }, [state.groups, state.profile, booted]);
 
+  // Real-time: sync new members joining any of our groups
+  useEffect(() => {
+    if (!booted || state.groups.length === 0) return;
+    const sb = supabase;
+    if (!sb) return;
+    const groupIds = new Set(state.groups.map((g) => g.id));
+
+    const channel = sb
+      .channel("group_members_sync")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "group_members" },
+        (payload) => {
+          const row = payload.new as {
+            group_id: string;
+            wallet_address: string;
+            display_name: string;
+            avatar: string;
+            roles: string[];
+          };
+          if (!groupIds.has(row.group_id)) return;
+          dispatch({
+            type: "SYNC_MEMBERS",
+            groupId: row.group_id,
+            member: {
+              walletAddress: row.wallet_address,
+              displayName: row.display_name,
+              avatar: row.avatar,
+              roles: row.roles,
+            },
+          });
+        }
+      )
+      .subscribe();
+
+    return () => { sb.removeChannel(channel); };
+  }, [booted, state.groups.length]);
+
   const addExpense: SplitPayContextValue["addExpense"] = useCallback((input) => {
     const expense: Expense = {
       ...input,
@@ -375,6 +431,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       ],
       inviteCode: code,
     };
+    members.forEach((m) => publishMember(summary.id, m));
     dispatch({ type: "ADD_GROUP", group: newGroup });
   }, []);
 
@@ -409,6 +466,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         ],
         inviteCode: code,
       };
+      members.forEach((m) => publishMember(id, m));
       dispatch({ type: "ADD_GROUP", group: newGroup });
       return newGroup;
     },
@@ -433,26 +491,44 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
 
       const code = invite.inviteCode ?? genCode();
       publishCode(code, invite);
+
+      // Fetch all existing members from Supabase so the joiner sees everyone
+      const remoteMembers = await fetchMembers(invite.id);
+      const joinerMember: GroupMember = {
+        walletAddress: myWallet,
+        displayName: state.profile?.displayName ?? "You",
+        avatar: state.profile?.avatar ?? "",
+        roles: [],
+      };
+      // Publish joiner to Supabase so existing members see the update
+      publishMember(invite.id, joinerMember);
+
+      // Merge remote members with known creator, deduplicating by wallet
+      const seen = new Set<string>();
+      const allMembers: GroupMember[] = [];
+      for (const m of [
+        ...remoteMembers,
+        {
+          walletAddress: invite.creator,
+          displayName: creatorName ?? formatAddress(invite.creator, 4),
+          avatar: creatorAvatar,
+          roles: ["admin"] as string[],
+        },
+        joinerMember,
+      ]) {
+        if (!seen.has(m.walletAddress)) {
+          seen.add(m.walletAddress);
+          allMembers.push(m);
+        }
+      }
+
       const newGroup: GroupData = {
         id: invite.id,
         name: invite.name,
         avatar: "",
-        memberCount: 2,
+        memberCount: allMembers.length,
         inviteCode: code,
-        members: [
-          {
-            walletAddress: invite.creator,
-            displayName: creatorName ?? formatAddress(invite.creator, 4),
-            avatar: creatorAvatar,
-            roles: ["admin"],
-          },
-          {
-            walletAddress: myWallet,
-            displayName: state.profile?.displayName ?? "You",
-            avatar: state.profile?.avatar ?? "",
-            roles: [],
-          },
-        ],
+        members: allMembers,
         expenses: [],
         activity: [
           {

@@ -1,6 +1,39 @@
 import { createClient } from "@supabase/supabase-js";
+import type { GroupMember } from "@0xchat/app-sdk";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export const supabase = url && key ? createClient(url, key) : null;
+
+export async function publishMember(groupId: string, member: GroupMember): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase.from("group_members").upsert(
+      {
+        group_id: groupId,
+        wallet_address: member.walletAddress,
+        display_name: member.displayName ?? "",
+        avatar: member.avatar ?? "",
+        roles: member.roles ?? [],
+      },
+      { onConflict: "group_id,wallet_address" }
+    );
+  } catch {}
+}
+
+export async function fetchMembers(groupId: string): Promise<GroupMember[]> {
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("group_members")
+      .select("wallet_address, display_name, avatar, roles")
+      .eq("group_id", groupId);
+    return (data ?? []).map((r) => ({
+      walletAddress: r.wallet_address,
+      displayName: r.display_name,
+      avatar: r.avatar,
+      roles: r.roles,
+    }));
+  } catch { return []; }
+}

@@ -86,8 +86,9 @@ export async function publishCode(code: string, info: object): Promise<void> {
   localSet(code, info);
   try {
     const { supabase } = await import("./supabase");
-    if (!supabase) return;
-    await supabase
+    const sb = supabase;
+    if (!sb) return;
+    await sb
       .from("invite_codes")
       .upsert({ code: code.toUpperCase(), data: info }, { onConflict: "code" });
   } catch {}
@@ -99,14 +100,15 @@ export async function resolveCodeRemote(code: string): Promise<Record<string, an
   if (local) return local;
   try {
     const { supabase } = await import("./supabase");
-    if (!supabase) return null;
-    const { data } = await supabase
+    const sb = supabase;
+    if (!sb) return null;
+    const { data } = await sb
       .from("invite_codes")
       .select("data")
       .eq("code", code.toUpperCase())
       .single();
     if (!data) return null;
-    localSet(code.toUpperCase(), data.data); // cache locally
+    localSet(code.toUpperCase(), data.data);
     return data.data;
   } catch { return null; }
 }
