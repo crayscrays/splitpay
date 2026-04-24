@@ -37,3 +37,35 @@ export async function fetchMembers(groupId: string): Promise<GroupMember[]> {
     }));
   } catch { return []; }
 }
+
+// ---------- Expenses ----------
+
+export async function publishExpense(expense: Record<string, any>): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase.from("group_expenses").upsert({
+      id: expense.id,
+      group_id: expense.groupId,
+      data: expense,
+      updated_at: new Date().toISOString(),
+    });
+  } catch {}
+}
+
+export async function deleteExpenseRemote(expenseId: string): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase.from("group_expenses").delete().eq("id", expenseId);
+  } catch {}
+}
+
+export async function fetchExpenses(groupId: string): Promise<Record<string, any>[]> {
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("group_expenses")
+      .select("data")
+      .eq("group_id", groupId);
+    return (data ?? []).map((r) => r.data);
+  } catch { return []; }
+}

@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -12,7 +13,7 @@ import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/app-sdk";
 import { bridge } from "./bridge";
 import { computeNetBalances, formatAddress, genCode, publishCode, simplifyDebts, storeCode, uid, type DebtEdge } from "./utils";
 import { loadGroups, saveGroups } from "./storage";
-import { fetchMembers, publishMember, supabase } from "./supabase";
+import { deleteExpenseRemote, fetchExpenses, fetchMembers, publishExpense, publishMember, supabase } from "./supabase";
 
 // ---------- Types ----------
 
@@ -85,6 +86,8 @@ type Action =
   | { type: "SET_AVAILABLE"; groups: GroupSummary[] }
   | { type: "ADD_GROUP"; group: GroupData }
   | { type: "SYNC_MEMBERS"; groupId: string; member: GroupMember }
+  | { type: "SYNC_EXPENSE"; expense: Expense }
+  | { type: "REMOVE_EXPENSE"; groupId: string; expenseId: string }
   | { type: "ADD_EXPENSE"; groupId: string; expense: Expense; activity: Activity }
   | { type: "EDIT_EXPENSE"; groupId: string; expense: Expense; activity: Activity }
   | { type: "DELETE_EXPENSE"; groupId: string; expenseId: string; activity?: Activity }
@@ -134,6 +137,30 @@ function reducer(state: State, action: Action): State {
             memberCount: g.memberCount + 1,
           };
         }),
+      };
+    case "SYNC_EXPENSE":
+      return {
+        ...state,
+        groups: state.groups.map((g) => {
+          if (g.id !== action.expense.groupId) return g;
+          const idx = g.expenses.findIndex((e) => e.id === action.expense.id);
+          return {
+            ...g,
+            expenses:
+              idx >= 0
+                ? g.expenses.map((e) => (e.id === action.expense.id ? action.expense : e))
+                : [action.expense, ...g.expenses],
+          };
+        }),
+      };
+    case "REMOVE_EXPENSE":
+      return {
+        ...state,
+        groups: state.groups.map((g) =>
+          g.id === action.groupId
+            ? { ...g, expenses: g.expenses.filter((e) => e.id !== action.expenseId) }
+            : g
+        ),
       };
     case "ADD_EXPENSE":
       return {
@@ -245,6 +272,8 @@ const Ctx = createContext<SplitPayContextValue | null>(null);
 export function SplitPayProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [booted, setBooted] = useState(false);
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
 
   // Initial load — check connection state, restore wallet-keyed data
   useEffect(() => {
@@ -264,9 +293,25 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
 
       const raw = loadGroups(profile.walletAddress);
-      const saved = (raw ?? []).map((g) =>
+      const local = (raw ?? []).map((g) =>
         g.inviteCode ? g : { ...g, inviteCode: genCode() }
       );
+
+      // Hydrate expenses from Supabase (source of truth) for each group
+      const saved = await Promise.all(
+        local.map(async (g) => {
+          const remote = await fetchExpenses(g.id);
+          if (remote.length === 0) return g;
+          // Remote wins: merge by id, prefer remote version
+          const remoteById = new Map(remote.map((e) => [e.id, e as Expense]));
+          const merged = [
+            ...g.expenses.map((e) => remoteById.get(e.id) ?? e),
+            ...remote.filter((e) => !g.expenses.some((le) => le.id === e.id)) as Expense[],
+          ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          return { ...g, expenses: merged };
+        })
+      );
+
       dispatch({
         type: "INIT",
         payload: {
@@ -296,7 +341,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     saveGroups(state.profile.walletAddress, state.groups);
   }, [state.groups, state.profile, booted]);
 
-  // Real-time: sync new members joining any of our groups
+  // Real-time: sync members and expenses across all our groups
   useEffect(() => {
     if (!booted || state.groups.length === 0) return;
     const sb = supabase;
@@ -304,29 +349,43 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     const groupIds = new Set(state.groups.map((g) => g.id));
 
     const channel = sb
-      .channel("group_members_sync")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "group_members" },
+      .channel("splitpay_sync")
+      // New member joined
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "group_members" },
         (payload) => {
-          const row = payload.new as {
-            group_id: string;
-            wallet_address: string;
-            display_name: string;
-            avatar: string;
-            roles: string[];
-          };
+          const row = payload.new as { group_id: string; wallet_address: string; display_name: string; avatar: string; roles: string[] };
           if (!groupIds.has(row.group_id)) return;
           dispatch({
             type: "SYNC_MEMBERS",
             groupId: row.group_id,
-            member: {
-              walletAddress: row.wallet_address,
-              displayName: row.display_name,
-              avatar: row.avatar,
-              roles: row.roles,
-            },
+            member: { walletAddress: row.wallet_address, displayName: row.display_name, avatar: row.avatar, roles: row.roles },
           });
+        }
+      )
+      // Expense added or updated (upsert triggers INSERT then UPDATE)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "group_expenses" },
+        (payload) => {
+          const expense = (payload.new as { data: Expense }).data;
+          if (expense && groupIds.has(expense.groupId)) {
+            dispatch({ type: "SYNC_EXPENSE", expense });
+          }
+        }
+      )
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "group_expenses" },
+        (payload) => {
+          const expense = (payload.new as { data: Expense }).data;
+          if (expense && groupIds.has(expense.groupId)) {
+            dispatch({ type: "SYNC_EXPENSE", expense });
+          }
+        }
+      )
+      // Expense deleted
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "group_expenses" },
+        (payload) => {
+          const row = payload.old as { id: string; group_id: string };
+          if (row.group_id && groupIds.has(row.group_id)) {
+            dispatch({ type: "REMOVE_EXPENSE", groupId: row.group_id, expenseId: row.id });
+          }
         }
       )
       .subscribe();
@@ -348,6 +407,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       actor: expense.paidBy,
       createdAt: expense.createdAt,
     };
+    publishExpense(expense);
     dispatch({ type: "ADD_EXPENSE", groupId: expense.groupId, expense, activity });
     return expense;
   }, []);
@@ -361,6 +421,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       actor: expense.paidBy,
       createdAt: new Date().toISOString(),
     };
+    publishExpense(expense);
     dispatch({ type: "EDIT_EXPENSE", groupId: expense.groupId, expense, activity });
   }, []);
 
@@ -374,6 +435,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         actor: "",
         createdAt: new Date().toISOString(),
       };
+      deleteExpenseRemote(expenseId);
       dispatch({ type: "DELETE_EXPENSE", groupId, expenseId, activity });
     },
     []
@@ -386,16 +448,28 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         token: "USDC",
         amount: amount.toFixed(2),
       });
+      const now = new Date().toISOString();
       const activity: Activity = {
         id: uid("act"),
         groupId,
         type: "payment_settled",
         message: `Paid $${amount.toFixed(2)} USDC`,
         actor: wallet,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
         meta: { txHash, toWallet, amount },
       };
       dispatch({ type: "SETTLE_SPLIT", groupId, expenseId, wallet, txHash, activity });
+      // Publish updated expense so other devices see the settled state
+      const group = stateRef.current.groups.find((g) => g.id === groupId);
+      const expense = group?.expenses.find((e) => e.id === expenseId);
+      if (expense) {
+        publishExpense({
+          ...expense,
+          splits: expense.splits.map((s) =>
+            s.wallet === wallet ? { ...s, settled: true, txHash, settledAt: now } : s
+          ),
+        });
+      }
       return txHash;
     },
     []
