@@ -2,7 +2,7 @@ import { createAppBridge, type AppBridge } from "@0xchat/app-sdk";
 import type { UserProfile, GroupSummary, GroupMember, Contact, AppCard } from "@0xchat/app-sdk";
 
 // USDC on Base Sepolia
-export const USDC_BASE_SEPOLIA = "0x6978709c40a31e848a76019188516d1414480b5e";
+export const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
 // ---------- Social mock fallbacks (contacts only — no pre-populated groups) ----------
 

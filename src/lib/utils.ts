@@ -57,7 +57,6 @@ export function uid(prefix = ""): string {
 
 // No I or O to avoid visual confusion with 1 and 0
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-const CODE_STORE = "splitpay:code:";
 
 export function genCode(): string {
   return Array.from({ length: 6 }, () =>
@@ -65,51 +64,28 @@ export function genCode(): string {
   ).join("");
 }
 
-function localSet(code: string, info: object): void {
-  try { localStorage.setItem(CODE_STORE + code, JSON.stringify(info)); } catch {}
-}
-
-function localGet(code: string): Record<string, any> | null {
-  try {
-    const raw = localStorage.getItem(CODE_STORE + code.toUpperCase());
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-// Keep storeCode as a sync alias used internally
-export function storeCode(code: string, info: object): void {
-  localSet(code, info);
-}
-
-/** Write to localStorage and Supabase (cross-device). Fire-and-forget. */
+/** Write invite code info to Supabase. Fire-and-forget. */
 export async function publishCode(code: string, info: object): Promise<void> {
-  localSet(code, info);
   try {
     const { supabase } = await import("./supabase");
-    const sb = supabase;
-    if (!sb) return;
-    await sb
+    if (!supabase) return;
+    await supabase
       .from("invite_codes")
       .upsert({ code: code.toUpperCase(), data: info }, { onConflict: "code" });
   } catch {}
 }
 
-/** Resolve a code — localStorage first (instant), then Supabase (cross-device). */
+/** Resolve a code from Supabase. */
 export async function resolveCodeRemote(code: string): Promise<Record<string, any> | null> {
-  const local = localGet(code);
-  if (local) return local;
   try {
     const { supabase } = await import("./supabase");
-    const sb = supabase;
-    if (!sb) return null;
-    const { data } = await sb
+    if (!supabase) return null;
+    const { data } = await supabase
       .from("invite_codes")
       .select("data")
       .eq("code", code.toUpperCase())
       .single();
-    if (!data) return null;
-    localSet(code.toUpperCase(), data.data);
-    return data.data;
+    return data?.data ?? null;
   } catch { return null; }
 }
 

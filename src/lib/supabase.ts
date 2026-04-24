@@ -6,6 +6,39 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export const supabase = url && key ? createClient(url, key) : null;
 
+// ---------- Groups ----------
+
+export async function publishGroup(group: { id: string; name: string; avatar: string; inviteCode: string }): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase.from("groups").upsert(
+      { id: group.id, name: group.name, avatar: group.avatar, invite_code: group.inviteCode },
+      { onConflict: "id" }
+    );
+  } catch {}
+}
+
+export async function fetchGroups(walletAddress: string): Promise<{ id: string; name: string; avatar: string; inviteCode: string }[]> {
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("group_members")
+      .select("groups(id, name, avatar, invite_code)")
+      .eq("wallet_address", walletAddress);
+    return (data ?? [])
+      .map((r: any) => r.groups)
+      .filter(Boolean)
+      .map((g: any) => ({
+        id: g.id,
+        name: g.name,
+        avatar: g.avatar ?? "",
+        inviteCode: g.invite_code ?? "",
+      }));
+  } catch { return []; }
+}
+
+// ---------- Members ----------
+
 export async function publishMember(groupId: string, member: GroupMember): Promise<void> {
   if (!supabase) return;
   try {

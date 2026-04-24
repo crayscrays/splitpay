@@ -11,9 +11,8 @@ import {
 } from "react";
 import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/app-sdk";
 import { bridge } from "./bridge";
-import { computeNetBalances, formatAddress, genCode, publishCode, simplifyDebts, storeCode, uid, type DebtEdge } from "./utils";
-import { loadGroups, saveGroups } from "./storage";
-import { deleteExpenseRemote, fetchExpenses, fetchMembers, publishExpense, publishMember, supabase } from "./supabase";
+import { computeNetBalances, formatAddress, genCode, publishCode, simplifyDebts, uid, type DebtEdge } from "./utils";
+import { deleteExpenseRemote, fetchExpenses, fetchGroups, fetchMembers, publishExpense, publishGroup, publishMember, supabase } from "./supabase";
 
 // ---------- Types ----------
 
@@ -292,23 +291,27 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       const [balance] = await Promise.all([bridge.getBalance("USDC")]);
       if (cancelled) return;
 
-      const raw = loadGroups(profile.walletAddress);
-      const local = (raw ?? []).map((g) =>
-        g.inviteCode ? g : { ...g, inviteCode: genCode() }
-      );
-
-      // Hydrate expenses from Supabase (source of truth) for each group
+      // Load all groups and their data from Supabase
+      const groupMetas = await fetchGroups(profile.walletAddress);
       const saved = await Promise.all(
-        local.map(async (g) => {
-          const remote = await fetchExpenses(g.id);
-          if (remote.length === 0) return g;
-          // Remote wins: merge by id, prefer remote version
-          const remoteById = new Map(remote.map((e) => [e.id, e as Expense]));
-          const merged = [
-            ...g.expenses.map((e) => remoteById.get(e.id) ?? e),
-            ...remote.filter((e) => !g.expenses.some((le) => le.id === e.id)) as Expense[],
-          ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          return { ...g, expenses: merged };
+        groupMetas.map(async (meta) => {
+          const [remoteMembers, remoteExpenses] = await Promise.all([
+            fetchMembers(meta.id),
+            fetchExpenses(meta.id),
+          ]);
+          const expenses = (remoteExpenses as Expense[]).sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          return {
+            id: meta.id,
+            name: meta.name,
+            avatar: meta.avatar,
+            inviteCode: meta.inviteCode || genCode(),
+            memberCount: remoteMembers.length,
+            members: remoteMembers,
+            expenses,
+            activity: [],
+          } as GroupData;
         })
       );
 
@@ -334,12 +337,6 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     })();
     return () => { cancelled = true; };
   }, []);
-
-  // Persist groups to localStorage, keyed by wallet
-  useEffect(() => {
-    if (!booted || !state.profile) return;
-    saveGroups(state.profile.walletAddress, state.groups);
-  }, [state.groups, state.profile, booted]);
 
   // Real-time: sync members and expenses across all our groups
   useEffect(() => {
@@ -505,6 +502,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       ],
       inviteCode: code,
     };
+    publishGroup({ id: newGroup.id, name: newGroup.name, avatar: newGroup.avatar, inviteCode: code });
     members.forEach((m) => publishMember(summary.id, m));
     dispatch({ type: "ADD_GROUP", group: newGroup });
   }, []);
@@ -540,6 +538,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         ],
         inviteCode: code,
       };
+      publishGroup({ id, name, avatar: "", inviteCode: code });
       members.forEach((m) => publishMember(id, m));
       dispatch({ type: "ADD_GROUP", group: newGroup });
       return newGroup;
@@ -574,7 +573,8 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         avatar: state.profile?.avatar ?? "",
         roles: [],
       };
-      // Publish joiner to Supabase so existing members see the update
+      // Publish group record and joiner to Supabase
+      publishGroup({ id: invite.id, name: invite.name, avatar: "", inviteCode: code });
       publishMember(invite.id, joinerMember);
 
       // Merge remote members with known creator, deduplicating by wallet

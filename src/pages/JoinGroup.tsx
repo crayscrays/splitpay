@@ -4,7 +4,7 @@ import { Users } from "lucide-react";
 import { useSplitPay, type InviteInfo } from "@/lib/splitpay-context";
 import { Header } from "@/components/Header";
 import { MemberAvatar } from "@/components/MemberAvatar";
-import { formatAddress, resolveCodeRemote, storeCode } from "@/lib/utils";
+import { formatAddress, publishCode, resolveCodeRemote } from "@/lib/utils";
 
 export function JoinGroup() {
   const { inviteCode: codeParam = "" } = useParams();
@@ -29,7 +29,7 @@ export function JoinGroup() {
         const decoded: InviteInfo = JSON.parse(atob(dataParam));
         if (decoded.id && decoded.name && decoded.creator) {
           const code = codeParam.toUpperCase();
-          storeCode(code, decoded);
+          publishCode(code, decoded);
           setInvite({ ...decoded, inviteCode: code });
           return;
         }
