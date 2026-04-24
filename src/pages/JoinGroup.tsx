@@ -21,23 +21,26 @@ export function JoinGroup() {
       return;
     }
 
-    // Try to decode invite data from ?d= query param (cross-device sharing via full URL)
+    // Try to decode invite data from ?d= query param (cross-device sharing via full URL).
+    // useSearchParams auto-decodes %xx sequences, giving us the original base64 string.
     const dataParam = searchParams.get("d");
     if (dataParam) {
       try {
         const decoded: InviteInfo = JSON.parse(atob(dataParam));
         if (decoded.id && decoded.name && decoded.creator) {
-          // Cache so the code alone works on this device going forward
-          storeCode(codeParam.toUpperCase(), decoded);
-          setInvite({ ...decoded, inviteCode: codeParam.toUpperCase() });
+          const code = codeParam.toUpperCase();
+          storeCode(code, decoded);
+          setInvite({ ...decoded, inviteCode: code });
           return;
         }
-      } catch {}
+      } catch {
+        // fall through to localStorage lookup
+      }
     }
 
-    // Fall back to locally cached data (same device, typed code)
+    // Fall back to locally cached data (same device / previously clicked the full link)
     const cached = resolveCode(codeParam);
-    if (cached && cached.id && cached.name && cached.creator) {
+    if (cached?.id && cached?.name && cached?.creator) {
       setInvite(cached as InviteInfo);
       return;
     }

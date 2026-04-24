@@ -473,7 +473,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         inviteCode: group.inviteCode,
       };
       storeCode(group.inviteCode, info);
-      const data = btoa(JSON.stringify(info));
+      const data = encodeURIComponent(btoa(JSON.stringify(info)));
       const base = window.location.href.split("#")[0];
       return `${base}#/join/${group.inviteCode}?d=${data}`;
     },
