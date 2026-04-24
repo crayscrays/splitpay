@@ -1,4 +1,4 @@
-import { HashRouter, Route, Routes } from "react-router-dom";
+import { HashRouter, Route, Routes, useLocation } from "react-router-dom";
 import { SplitPayProvider, useSplitPay } from "./lib/splitpay-context";
 import { ConnectWallet } from "./pages/ConnectWallet";
 import { Dashboard } from "./pages/Dashboard";
@@ -10,9 +10,14 @@ import { JoinGroup } from "./pages/JoinGroup";
 import { BottomNav } from "./components/BottomNav";
 import { GroupsPage } from "./pages/GroupsPage";
 import { WalletPage } from "./pages/WalletPage";
+import { DebugPage } from "./pages/DebugPage";
 
 function AppShell() {
   const sp = useSplitPay();
+  const { pathname } = useLocation();
+
+  // Always allow the debug route through
+  if (pathname === "/debug") return <DebugPage />;
 
   // Loading — wallet check in progress
   if (sp.loading) {
@@ -23,7 +28,7 @@ function AppShell() {
     );
   }
 
-  // Not connected — show onboarding (but let /join links through so recipients can connect first)
+  // Not connected — not running inside 0xChat
   if (sp.mode === "disconnected") {
     return <ConnectWallet />;
   }

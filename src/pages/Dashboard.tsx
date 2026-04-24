@@ -46,7 +46,7 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-1.5 text-xs text-text-muted">
-                <Wallet size={12} /> USDC · Base
+                <Wallet size={12} /> USDC · Base Sepolia
               </div>
               <div className="mt-1 text-2xl font-semibold tracking-tight" data-testid="text-balance">
                 {formatUsdc(Number(sp.balance) || 0)}

@@ -2,7 +2,7 @@
   "id": "splitpay",
   "name": "SplitPay",
   "version": "1.0.0",
-  "description": "Split bills and settle up with your group — powered by USDC on Base",
+  "description": "Split bills and settle up with your group — powered by USDC on Base Sepolia",
   "entry": "https://splitpay.vercel.app",
   "icon": "/icon.svg",
   "permissions": [
@@ -15,5 +15,5 @@
     "chat:send"
   ],
   "category": "social",
-  "chains": [8453]
+  "chains": [84532]
 }

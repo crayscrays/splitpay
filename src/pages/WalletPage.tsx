@@ -20,7 +20,7 @@ export function WalletPage() {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <Header title="Wallet" subtitle="USDC on Base" />
+      <Header title="Wallet" subtitle="USDC on Base Sepolia" />
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {/* Balance card */}
@@ -51,7 +51,7 @@ export function WalletPage() {
             </div>
           </div>
           <div className="text-xs text-text-muted mt-1 inline-flex items-center gap-1">
-            <WalletIcon size={11} /> Base mainnet · USDC
+            <WalletIcon size={11} /> Base Sepolia · USDC
           </div>
         </div>
 
@@ -68,7 +68,7 @@ export function WalletPage() {
         </div>
 
         <a
-          href={`https://basescan.org/address/${addr}`}
+          href={`https://sepolia.basescan.org/address/${addr}`}
           target="_blank"
           rel="noopener noreferrer"
           className="btn btn-secondary w-full py-2.5 text-sm"

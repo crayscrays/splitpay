@@ -1,4 +1,5 @@
 import { MessageCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function ConnectWallet() {
   return (
@@ -12,6 +13,12 @@ export function ConnectWallet() {
           SplitPay requires a 0xChat wallet. Open this app from within 0xChat to connect automatically.
         </p>
       </div>
+      <Link
+        to="/debug"
+        className="text-xs text-text-dim underline underline-offset-2"
+      >
+        Bridge diagnostics
+      </Link>
     </div>
   );
 }

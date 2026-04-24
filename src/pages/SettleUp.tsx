@@ -146,7 +146,7 @@ export function SettleUp() {
                             <div className="text-sm font-medium truncate">
                               To {to?.displayName ?? "Unknown"}
                             </div>
-                            <div className="text-xs text-text-muted">USDC on Base</div>
+                            <div className="text-xs text-text-muted">USDC on Base Sepolia</div>
                           </div>
                           <div className="text-right">
                             <div className="font-semibold">
