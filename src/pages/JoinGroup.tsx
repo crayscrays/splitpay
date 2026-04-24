@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Users } from "lucide-react";
 import { useSplitPay, type InviteInfo } from "@/lib/splitpay-context";
 import { Header } from "@/components/Header";
 import { MemberAvatar } from "@/components/MemberAvatar";
-import { formatAddress } from "@/lib/utils";
+import { formatAddress, resolveCode, storeCode } from "@/lib/utils";
 
 export function JoinGroup() {
-  const { inviteCode = "" } = useParams();
+  const { inviteCode: codeParam = "" } = useParams();
+  const [searchParams] = useSearchParams();
   const sp = useSplitPay();
   const nav = useNavigate();
   const [invite, setInvite] = useState<InviteInfo | null>(null);
@@ -15,17 +16,34 @@ export function JoinGroup() {
   const [joining, setJoining] = useState(false);
 
   useEffect(() => {
-    try {
-      const decoded: InviteInfo = JSON.parse(atob(inviteCode));
-      if (decoded.id && decoded.name && decoded.creator) {
-        setInvite(decoded);
-      } else {
-        setError("This invite link is invalid or expired.");
-      }
-    } catch {
-      setError("This invite link is invalid or expired.");
+    if (!codeParam) {
+      setError("No invite code provided.");
+      return;
     }
-  }, [inviteCode]);
+
+    // Try to decode invite data from ?d= query param (cross-device sharing via full URL)
+    const dataParam = searchParams.get("d");
+    if (dataParam) {
+      try {
+        const decoded: InviteInfo = JSON.parse(atob(dataParam));
+        if (decoded.id && decoded.name && decoded.creator) {
+          // Cache so the code alone works on this device going forward
+          storeCode(codeParam.toUpperCase(), decoded);
+          setInvite({ ...decoded, inviteCode: codeParam.toUpperCase() });
+          return;
+        }
+      } catch {}
+    }
+
+    // Fall back to locally cached data (same device, typed code)
+    const cached = resolveCode(codeParam);
+    if (cached && cached.id && cached.name && cached.creator) {
+      setInvite(cached as InviteInfo);
+      return;
+    }
+
+    setError("Invite code not found. Ask the group creator to share the invite link from the app.");
+  }, [codeParam, searchParams]);
 
   // If already a member, go straight to the group
   useEffect(() => {
@@ -79,6 +97,15 @@ export function JoinGroup() {
       <Header title="Join group" back="/" />
 
       <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6">
+        {/* Invite code badge */}
+        {invite.inviteCode && (
+          <div className="px-4 py-1.5 rounded-full bg-accent/10 border border-accent/30">
+            <span className="text-xs text-accent font-mono font-semibold tracking-widest">
+              {invite.inviteCode}
+            </span>
+          </div>
+        )}
+
         <div className="flex flex-col items-center gap-3 text-center">
           <MemberAvatar name={invite.name} wallet={invite.id} size="lg" />
           <div>

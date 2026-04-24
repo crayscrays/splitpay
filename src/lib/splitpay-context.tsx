@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/app-sdk";
 import { bridge } from "./bridge";
-import { computeNetBalances, formatAddress, simplifyDebts, uid, type DebtEdge } from "./utils";
+import { computeNetBalances, formatAddress, genCode, simplifyDebts, storeCode, uid, type DebtEdge } from "./utils";
 import { loadGroups, saveGroups } from "./storage";
 
 // ---------- Types ----------
@@ -57,6 +57,7 @@ export interface GroupData {
   members: GroupMember[];
   expenses: Expense[];
   activity: Activity[];
+  inviteCode: string;
 }
 
 export interface InviteInfo {
@@ -64,6 +65,7 @@ export interface InviteInfo {
   name: string;
   creator: string; // wallet address
   creatorName?: string;
+  inviteCode?: string;
 }
 
 // ---------- State ----------
@@ -210,7 +212,8 @@ interface SplitPayContextValue extends State {
   addGroup(group: GroupSummary): Promise<void>;
   createGroup(name: string, members: GroupMember[]): GroupData;
   joinGroup(invite: InviteInfo): Promise<void>;
-  makeInviteCode(groupId: string): string;
+  makeInviteCode(groupId: string): string; // returns the 6-char code
+  makeInviteUrl(groupId: string): string;  // returns the full shareable URL
   refreshAvailableGroups(): Promise<void>;
   shareExpenseToGroup(groupId: string, expense: Expense): Promise<void>;
   getGroup(id: string): GroupData | undefined;
@@ -242,13 +245,16 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       const [balance] = await Promise.all([bridge.getBalance("USDC")]);
       if (cancelled) return;
 
-      const saved = loadGroups(profile.walletAddress);
+      const raw = loadGroups(profile.walletAddress);
+      const saved = (raw ?? []).map((g) =>
+        g.inviteCode ? g : { ...g, inviteCode: genCode() }
+      );
       dispatch({
         type: "INIT",
         payload: {
           profile,
           balance,
-          groups: saved ?? [],
+          groups: saved,
           mode: "live",
         },
       });
@@ -358,6 +364,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
           createdAt: new Date().toISOString(),
         },
       ],
+      inviteCode: genCode(),
     };
     dispatch({ type: "ADD_GROUP", group: newGroup });
   }, []);
@@ -365,6 +372,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
   const createGroup: SplitPayContextValue["createGroup"] = useCallback(
     (name, members) => {
       const id = uid("grp");
+      const code = genCode();
       const newGroup: GroupData = {
         id,
         name,
@@ -382,6 +390,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
             createdAt: new Date().toISOString(),
           },
         ],
+        inviteCode: code,
       };
       dispatch({ type: "ADD_GROUP", group: newGroup });
       return newGroup;
@@ -405,11 +414,14 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      const code = invite.inviteCode ?? genCode();
+      storeCode(code, invite);
       const newGroup: GroupData = {
         id: invite.id,
         name: invite.name,
         avatar: "",
         memberCount: 2,
+        inviteCode: code,
         members: [
           {
             walletAddress: invite.creator,
@@ -444,14 +456,26 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
   const makeInviteCode: SplitPayContextValue["makeInviteCode"] = useCallback(
     (groupId) => {
       const group = state.groups.find((g) => g.id === groupId);
+      return group?.inviteCode ?? "";
+    },
+    [state.groups]
+  );
+
+  const makeInviteUrl: SplitPayContextValue["makeInviteUrl"] = useCallback(
+    (groupId) => {
+      const group = state.groups.find((g) => g.id === groupId);
       if (!group) return "";
       const info: InviteInfo = {
         id: group.id,
         name: group.name,
         creator: state.profile?.walletAddress ?? "",
         creatorName: state.profile?.displayName ?? undefined,
+        inviteCode: group.inviteCode,
       };
-      return btoa(JSON.stringify(info));
+      storeCode(group.inviteCode, info);
+      const data = btoa(JSON.stringify(info));
+      const base = window.location.href.split("#")[0];
+      return `${base}#/join/${group.inviteCode}?d=${data}`;
     },
     [state.groups, state.profile]
   );
@@ -540,6 +564,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     createGroup,
     joinGroup,
     makeInviteCode,
+    makeInviteUrl,
     refreshAvailableGroups,
     shareExpenseToGroup,
     getGroup,

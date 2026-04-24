@@ -169,18 +169,15 @@ function InviteSheet({
   const sp = useSplitPay();
   const [copied, setCopied] = useState(false);
 
-  const inviteCode = sp.makeInviteCode(groupId);
-  const base = window.location.href.split("#")[0];
-  const inviteUrl = `${base}#/join/${inviteCode}`;
+  const code = sp.makeInviteCode(groupId);
+  const inviteUrl = sp.makeInviteUrl(groupId);
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* fallback: show url */
-    }
+    } catch {}
   };
 
   const shareToChat = async () => {
@@ -195,9 +192,7 @@ function InviteSheet({
         splits: [],
         createdAt: new Date().toISOString(),
       });
-    } catch {
-      /* ignore */
-    }
+    } catch {}
     onClose();
   };
 
@@ -215,27 +210,35 @@ function InviteSheet({
             <X size={16} />
           </button>
         </div>
-        <div className="p-4 space-y-3">
-          <p className="text-sm text-text-muted">
-            Share this link — anyone who opens it will be added as a member.
-          </p>
-
-          {/* Link row */}
-          <div className="flex gap-2 items-center">
-            <div className="flex-1 bg-surface-2 border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-muted truncate">
-              {inviteUrl}
+        <div className="p-4 space-y-4">
+          {/* Invite code — for verbal / manual sharing */}
+          <div className="flex flex-col items-center gap-1 py-3 rounded-xl bg-accent/5 border border-accent/20">
+            <div className="text-xs text-text-muted">Invite code</div>
+            <div className="text-3xl font-bold tracking-[0.25em] font-mono text-accent">
+              {code}
             </div>
-            <button
-              onClick={copy}
-              className={cn(
-                "btn flex-shrink-0 px-3 py-2 text-sm transition-colors",
-                copied ? "btn-primary" : "btn-secondary"
-              )}
-              data-testid="button-copy-invite"
-            >
-              {copied ? <Check size={14} /> : <Copy size={14} />}
-              {copied ? "Copied" : "Copy"}
-            </button>
+            <div className="text-xs text-text-dim">Others can enter this code to join</div>
+          </div>
+
+          {/* Full link row */}
+          <div className="space-y-1.5">
+            <div className="text-xs text-text-muted">Or share the invite link</div>
+            <div className="flex gap-2 items-center">
+              <div className="flex-1 bg-surface-2 border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-muted truncate">
+                {inviteUrl}
+              </div>
+              <button
+                onClick={copy}
+                className={cn(
+                  "btn flex-shrink-0 px-3 py-2 text-sm transition-colors",
+                  copied ? "btn-primary" : "btn-secondary"
+                )}
+                data-testid="button-copy-invite"
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
           </div>
 
           {/* Share to 0xChat */}

@@ -53,6 +53,29 @@ export function uid(prefix = ""): string {
   return `${prefix}${prefix ? "-" : ""}${Date.now().toString(36)}-${rand}`;
 }
 
+// ---------- Invite codes ----------
+
+// No I or O to avoid visual confusion with 1 and 0
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const CODE_STORE = "splitpay:code:";
+
+export function genCode(): string {
+  return Array.from({ length: 6 }, () =>
+    CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]
+  ).join("");
+}
+
+export function storeCode(code: string, info: object): void {
+  try { localStorage.setItem(CODE_STORE + code, JSON.stringify(info)); } catch {}
+}
+
+export function resolveCode(code: string): Record<string, any> | null {
+  try {
+    const raw = localStorage.getItem(CODE_STORE + code.toUpperCase());
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
 // ---------- Math ----------
 
 /**
