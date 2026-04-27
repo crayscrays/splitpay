@@ -34,62 +34,76 @@ async function requireGroup(ctx: MsgContext): Promise<string | null> {
   const id = (await ctx.group.getState("splitpay_group_id")) as string | null;
   if (!id) {
     await ctx.reply(
-      "No group linked to this chat.\nUse /create <name> to start a new group, or /link <code> to connect an existing one."
+      "No group linked to this chat.\nUse /create <name> to start one, or /link <code> to connect an existing group."
     );
   }
   return id;
+}
+
+// Silently add sender to group if they're not already a member
+async function ensureMember(groupId: string, ctx: MsgContext): Promise<void> {
+  const existing = await fetchMembers(groupId);
+  const alreadyIn = existing.some(
+    (m) => m.walletAddress.toLowerCase() === ctx.sender.wallet.toLowerCase()
+  );
+  if (!alreadyIn) {
+    await publishMember(groupId, {
+      walletAddress: ctx.sender.wallet,
+      displayName: ctx.sender.displayName,
+      avatar: ctx.sender.avatar ?? "",
+      roles: [],
+    });
+  }
 }
 
 // ---- Command handlers ----
 
 export async function handleHelp(ctx: MsgContext): Promise<void> {
   await ctx.reply(
-    `SplitPay Bot — Commands
+    `SplitPay — Commands
 
-/create <name>                    Create a new expense group
-/link <code>                      Link chat to an existing group by invite code
-/status                           Show linked group info
+/create <name>          Start a new expense group
+/link <code>            Connect this chat to an existing group
+/status                 Show group info + invite code
 
-/join                             Join the linked group yourself
-/join @username                   Add a chat member to the group
+/join @username         Add someone to the group
+/join                   Add yourself to the group
 
-/add <title> <amount>             Record expense paid by you, split equally among all members
-/add <title> <amount> @u1 @u2     Record expense paid by you, split only among you + mentioned users
+/add <amount>           Quick-add expense (title defaults to "Expense")
+/add <amount> <title>   Add expense split equally among all members
+/add <amount> <title> @u1 @u2   Split only among you + mentioned users
 
-/expenses [n]                     List last N expenses (default 5)
-/balance                          Net balance per person
-/debts                            Simplified who owes who
-/settle                           Check what you owe and pay via wallet`
+/balance                Net balance per person
+/debts                  Simplified who owes who
+/settle                 See what you owe + pay via wallet
+/expenses [n]           List last N expenses (default 5)`
   );
 }
 
 export async function handleCreate(args: string, ctx: MsgContext): Promise<void> {
   const name = args.trim();
   if (!name) {
-    await ctx.reply("Usage: /create <group name>\nExample: /create Tokyo Trip");
+    await ctx.reply("Usage: /create <name>\nExample: /create Tokyo Trip");
     return;
   }
 
   const existing = (await ctx.group.getState("splitpay_group_id")) as string | null;
   if (existing) {
     const existingName = await fetchGroupName(existing);
-    await ctx.reply(
-      `This chat is already linked to "${existingName}".\nUse /link <code> to switch groups.`
-    );
+    await ctx.reply(`Already linked to "${existingName}". Use /link <code> to switch.`);
     return;
   }
 
   const groupId = uid("grp");
   const inviteCode = genCode();
-  const creator: GroupMember = {
+
+  await publishGroup({ id: groupId, name, avatar: "", inviteCode });
+  await publishMember(groupId, {
     walletAddress: ctx.sender.wallet,
     displayName: ctx.sender.displayName,
     avatar: ctx.sender.avatar ?? "",
     roles: ["admin"],
-  };
-
-  await publishGroup({ id: groupId, name, avatar: "", inviteCode });
-  await publishMember(groupId, creator);
+  });
   await publishInviteCode(inviteCode, {
     id: groupId,
     name,
@@ -101,11 +115,11 @@ export async function handleCreate(args: string, ctx: MsgContext): Promise<void>
   await ctx.group.setState("splitpay_group_id", groupId);
 
   await ctx.replyCard({
-    title: `Group created: ${name}`,
-    subtitle: "1 member (you)",
+    title: name,
+    subtitle: "Group created — share the invite code below",
     fields: [
       { label: "Invite Code", value: inviteCode },
-      { label: "Tip", value: "Use /join @username to add members" },
+      { label: "Add members", value: "/join @username or share code" },
     ],
     actions: [],
   });
@@ -114,18 +128,18 @@ export async function handleCreate(args: string, ctx: MsgContext): Promise<void>
 export async function handleLink(args: string, ctx: MsgContext): Promise<void> {
   const code = args.trim().toUpperCase();
   if (code.length !== 6) {
-    await ctx.reply("Usage: /link <6-character invite code>\nExample: /link ABCDEF");
+    await ctx.reply("Usage: /link <6-char code>\nExample: /link ABCDEF");
     return;
   }
 
   const info = await resolveInviteCode(code);
   if (!info) {
-    await ctx.reply(`No group found with code "${code}". Double-check and try again.`);
+    await ctx.reply(`No group found for code "${code}". Double-check and try again.`);
     return;
   }
 
   await ctx.group.setState("splitpay_group_id", info.groupId);
-  await ctx.reply(`Linked to "${info.groupName}". Use /join to add members.`);
+  await ctx.reply(`Linked to "${info.groupName}". Type /add to start tracking expenses.`);
 }
 
 export async function handleJoin(args: string, ctx: MsgContext): Promise<void> {
@@ -143,16 +157,13 @@ export async function handleJoin(args: string, ctx: MsgContext): Promise<void> {
       await ctx.reply("You're already in this group.");
       return;
     }
-    const member: GroupMember = {
+    await publishMember(groupId, {
       walletAddress: ctx.sender.wallet,
       displayName: ctx.sender.displayName,
       avatar: ctx.sender.avatar ?? "",
       roles: [],
-    };
-    await publishMember(groupId, member);
-    await ctx.reply(
-      `${ctx.sender.displayName || shortAddr(ctx.sender.wallet)} joined the group.`
-    );
+    });
+    await ctx.reply(`${ctx.sender.displayName || shortAddr(ctx.sender.wallet)} joined.`);
     return;
   }
 
@@ -166,25 +177,22 @@ export async function handleJoin(args: string, ctx: MsgContext): Promise<void> {
   );
 
   if (!target) {
-    await ctx.reply(`Could not find "@${mentionMatch[1]}" in this chat.`);
+    await ctx.reply(`Couldn't find "@${mentionMatch[1]}" in this chat.`);
     return;
   }
 
   if (existingSet.has(target.wallet.toLowerCase())) {
-    await ctx.reply(
-      `${target.displayName || shortAddr(target.wallet)} is already in the group.`
-    );
+    await ctx.reply(`${target.displayName || shortAddr(target.wallet)} is already in the group.`);
     return;
   }
 
-  const member: GroupMember = {
+  await publishMember(groupId, {
     walletAddress: target.wallet,
     displayName: target.displayName,
     avatar: target.avatar ?? "",
     roles: [],
-  };
-  await publishMember(groupId, member);
-  await ctx.reply(`${target.displayName || shortAddr(target.wallet)} added to the group.`);
+  });
+  await ctx.reply(`${target.displayName || shortAddr(target.wallet)} added.`);
 }
 
 export async function handleStatus(ctx: MsgContext): Promise<void> {
@@ -197,63 +205,54 @@ export async function handleStatus(ctx: MsgContext): Promise<void> {
     fetchExpenses(groupId),
   ]);
 
+  const inviteCode = (await ctx.group.getState("splitpay_invite_code")) as string | null;
   const unsettled = expenses.flatMap((e) => e.splits.filter((s) => !s.settled));
   const totalOwed = unsettled.reduce((sum, s) => sum + s.amount, 0) / 2;
 
-  await ctx.replyCard({
-    title: name,
-    subtitle: `${members.length} members · ${expenses.length} expenses`,
-    fields: [
-      { label: "Outstanding", value: formatUsdc(totalOwed) },
-      {
-        label: "Members",
-        value: members.map((m) => m.displayName || shortAddr(m.walletAddress)).join(", "),
-      },
-    ],
-    actions: [],
-  });
+  const fields: CardField[] = [
+    { label: "Members", value: members.map((m) => m.displayName || shortAddr(m.walletAddress)).join(", ") },
+    { label: "Expenses", value: `${expenses.length}` },
+    { label: "Outstanding", value: formatUsdc(totalOwed) },
+  ];
+  if (inviteCode) fields.push({ label: "Invite Code", value: inviteCode });
+
+  await ctx.replyCard({ title: name, subtitle: `${members.length} members`, fields, actions: [] });
 }
 
 export async function handleAdd(args: string, ctx: MsgContext): Promise<void> {
   const groupId = await requireGroup(ctx);
   if (!groupId) return;
+  await ensureMember(groupId, ctx);
 
-  // Extract trailing @mentions, e.g. "Dinner 50 @alice @bob"
+  // Extract trailing @mentions: "/add 50 dinner @alice @bob"
   const mentionRegex = /(\s+@\S+)+$/;
   const mentionMatch = args.match(mentionRegex);
   const mentionedNames = mentionMatch
     ? [...mentionMatch[0].matchAll(/@(\S+)/g)].map((m) => m[1].toLowerCase())
     : [];
-  const withoutMentions = mentionMatch
-    ? args.slice(0, mentionMatch.index).trim()
-    : args.trim();
+  const withoutMentions = mentionMatch ? args.slice(0, mentionMatch.index).trim() : args.trim();
 
-  // Parse "<title> <amount>" — amount is the last number
-  const amountMatch = withoutMentions.match(/^(.+?)\s+([\d.]+)$/);
-  if (!amountMatch) {
+  // Parse: <amount> [title] — amount is first, title is optional
+  const parsed = withoutMentions.match(/^([\d.]+)(?:\s+(.+))?$/);
+  if (!parsed) {
     await ctx.reply(
-      "Usage:\n  /add <title> <amount>\n  /add <title> <amount> @user1 @user2\nExample: /add Dinner 50 @alice @bob"
+      "Usage:\n  /add <amount>\n  /add <amount> <title>\n  /add <amount> <title> @user1 @user2\nExample: /add 50 Dinner @alice"
     );
     return;
   }
 
-  const [, title, amountStr] = amountMatch;
-  const amount = parseFloat(amountStr);
+  const amount = parseFloat(parsed[1]);
   if (isNaN(amount) || amount <= 0) {
-    await ctx.reply(`Invalid amount "${amountStr}". Example: /add Dinner 50`);
+    await ctx.reply(`Invalid amount "${parsed[1]}". Example: /add 50 Dinner`);
     return;
   }
+  const title = (parsed[2] || "Expense").trim();
 
   const allMembers = await fetchMembers(groupId);
-  if (allMembers.length === 0) {
-    await ctx.reply("No members yet. Use /join to add members first.");
-    return;
-  }
 
   let splitMembers: GroupMember[];
 
   if (mentionedNames.length > 0) {
-    // Split among sender + mentioned users only
     const chatMembers = await ctx.group.getMembers();
 
     const unknownNames = mentionedNames.filter(
@@ -265,13 +264,11 @@ export async function handleAdd(args: string, ctx: MsgContext): Promise<void> {
         )
     );
     if (unknownNames.length > 0) {
-      await ctx.reply(
-        `Could not find: ${unknownNames.map((n) => `@${n}`).join(", ")} in this chat.`
-      );
+      await ctx.reply(`Couldn't find: ${unknownNames.map((n) => `@${n}`).join(", ")} in this chat.`);
       return;
     }
 
-    // Build split list: sender + mentioned (deduped)
+    // Sender + mentioned users (deduped)
     const walletsSeen = new Set<string>();
     splitMembers = [];
 
@@ -279,15 +276,11 @@ export async function handleAdd(args: string, ctx: MsgContext): Promise<void> {
       const key = wallet.toLowerCase();
       if (walletsSeen.has(key)) return;
       walletsSeen.add(key);
-      // Prefer existing group member record; otherwise create one on the fly
       const existing = allMembers.find((m) => m.walletAddress.toLowerCase() === key);
-      splitMembers.push(
-        existing ?? { walletAddress: wallet, displayName, avatar, roles: [] }
-      );
+      splitMembers.push(existing ?? { walletAddress: wallet, displayName, avatar, roles: [] });
     };
 
     addToSplit(ctx.sender.wallet, ctx.sender.displayName, ctx.sender.avatar ?? "");
-
     for (const name of mentionedNames) {
       const cm = chatMembers.find(
         (m) =>
@@ -300,6 +293,11 @@ export async function handleAdd(args: string, ctx: MsgContext): Promise<void> {
     splitMembers = allMembers;
   }
 
+  if (splitMembers.length === 0) {
+    await ctx.reply("No members to split with. Use /join to add people first.");
+    return;
+  }
+
   const paidBy = ctx.sender.wallet;
   const amounts = splitEvenly(amount, splitMembers.length);
   const splits = splitMembers.map((m, i) => ({
@@ -308,7 +306,7 @@ export async function handleAdd(args: string, ctx: MsgContext): Promise<void> {
     settled: m.walletAddress.toLowerCase() === paidBy.toLowerCase(),
   }));
 
-  const expense: Expense = {
+  await publishExpense({
     id: uid("exp"),
     groupId,
     description: title,
@@ -317,18 +315,21 @@ export async function handleAdd(args: string, ctx: MsgContext): Promise<void> {
     splitType: "equal",
     splits,
     createdAt: new Date().toISOString(),
-  };
+  } as Expense);
 
-  await publishExpense(expense);
+  const others = splitMembers.filter((m) => m.walletAddress.toLowerCase() !== paidBy.toLowerCase());
+  const perPerson = amounts[0];
 
   await ctx.replyCard({
     title,
-    subtitle: `${formatUsdc(amount)} · paid by you`,
+    subtitle: `${formatUsdc(amount)} paid by you · ${formatUsdc(perPerson)} each`,
     fields: [
-      { label: "Per person", value: formatUsdc(amounts[0]) },
       {
-        label: "Split between",
-        value: splitMembers.map((m) => m.displayName || shortAddr(m.walletAddress)).join(", "),
+        label: others.length > 0 ? "Each person owes you" : "Split with",
+        value:
+          others.length > 0
+            ? `${formatUsdc(perPerson)} — ${others.map((m) => m.displayName || shortAddr(m.walletAddress)).join(", ")}`
+            : "just you",
       },
     ],
     actions: [],
@@ -358,7 +359,7 @@ export async function handleExpenses(args: string, ctx: MsgContext): Promise<voi
     const allSettled = e.splits.every((s) => s.settled);
     return {
       label: `${e.description}${allSettled ? " ✓" : ""}`,
-      value: `${formatUsdc(e.amount)} by ${shortName(e.paidBy, members)}`,
+      value: `${formatUsdc(e.amount)} · ${shortName(e.paidBy, members)}`,
     };
   });
 
@@ -383,7 +384,7 @@ export async function handleBalance(ctx: MsgContext): Promise<void> {
   const nonZero = Object.entries(balances).filter(([, v]) => Math.abs(v) > 0.009);
 
   if (nonZero.length === 0) {
-    await ctx.reply("All settled up! No outstanding balances.");
+    await ctx.reply("All settled up!");
     return;
   }
 
@@ -391,12 +392,12 @@ export async function handleBalance(ctx: MsgContext): Promise<void> {
     .sort(([, a], [, b]) => b - a)
     .map(([wallet, amount]) => ({
       label: shortName(wallet, members),
-      value: amount > 0 ? `+${formatUsdc(amount)}` : `-${formatUsdc(Math.abs(amount))}`,
+      value: amount > 0 ? `+${formatUsdc(amount)}` : `−${formatUsdc(Math.abs(amount))}`,
     }));
 
   await ctx.replyCard({
-    title: "Group Balances",
-    subtitle: "Positive = owed money · Negative = owes money",
+    title: "Balances",
+    subtitle: "+ means owed · − means owes",
     fields,
     actions: [],
   });
@@ -414,7 +415,7 @@ export async function handleDebts(ctx: MsgContext): Promise<void> {
   const debts = simplifyDebts(computeNetBalances(expenses));
 
   if (debts.length === 0) {
-    await ctx.reply("All settled up! No outstanding debts.");
+    await ctx.reply("All settled up!");
     return;
   }
 
@@ -425,7 +426,7 @@ export async function handleDebts(ctx: MsgContext): Promise<void> {
 
   await ctx.replyCard({
     title: "Who Owes Who",
-    subtitle: `${debts.length} transfer${debts.length !== 1 ? "s" : ""} needed to settle up`,
+    subtitle: `${debts.length} payment${debts.length !== 1 ? "s" : ""} to clear everything`,
     fields,
     actions: [],
   });
@@ -441,17 +442,18 @@ export async function handleSettle(ctx: MsgContext): Promise<void> {
   ]);
 
   const debts = simplifyDebts(computeNetBalances(expenses));
-
-  if (debts.length === 0) {
-    await ctx.reply("All settled up! Nothing to pay.");
-    return;
-  }
-
   const senderLow = ctx.sender.wallet.toLowerCase();
   const myDebts = debts.filter((d) => d.from.toLowerCase() === senderLow);
 
-  const fields: CardField[] = debts.map((d) => ({
-    label: `${shortName(d.from, members)} → ${shortName(d.to, members)}`,
+  if (myDebts.length === 0) {
+    await ctx.reply("You're all settled up! Use /debts to see the full group.");
+    return;
+  }
+
+  const totalOwed = myDebts.reduce((s, d) => s + d.amount, 0);
+
+  const fields: CardField[] = myDebts.map((d) => ({
+    label: `→ ${shortName(d.to, members)}`,
     value: formatUsdc(d.amount),
   }));
 
@@ -468,12 +470,12 @@ export async function handleSettle(ctx: MsgContext): Promise<void> {
     },
   }));
 
-  const subtitle =
-    myDebts.length > 0
-      ? `You owe ${formatUsdc(myDebts.reduce((s, d) => s + d.amount, 0))} total`
-      : "You have no outstanding debts";
-
-  await ctx.replyCard({ title: "Settle Up", subtitle, fields, actions });
+  await ctx.replyCard({
+    title: `You owe ${formatUsdc(totalOwed)}`,
+    subtitle: `${myDebts.length} payment${myDebts.length !== 1 ? "s" : ""} to settle up`,
+    fields,
+    actions,
+  });
 }
 
 export async function handlePaymentComplete(ctx: PaymentContext): Promise<void> {
@@ -514,7 +516,7 @@ export async function handlePaymentComplete(ctx: PaymentContext): Promise<void> 
 
   if (settledCount > 0) {
     await ctx.reply(
-      `Payment confirmed! ${shortName(from, members)} paid ${formatUsdc(paid)} to ${shortName(to, members)}. ${settledCount} split${settledCount !== 1 ? "s" : ""} settled.`
+      `${shortName(from, members)} paid ${formatUsdc(paid)} to ${shortName(to, members)}. ${settledCount} split${settledCount !== 1 ? "s" : ""} settled.`
     );
   }
 }
