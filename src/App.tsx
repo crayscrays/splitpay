@@ -7,9 +7,6 @@ import { AddExpense } from "./pages/AddExpense";
 import { ExpenseDetail } from "./pages/ExpenseDetail";
 import { SettleUp } from "./pages/SettleUp";
 import { JoinGroup } from "./pages/JoinGroup";
-import { BottomNav } from "./components/BottomNav";
-import { GroupsPage } from "./pages/GroupsPage";
-import { WalletPage } from "./pages/WalletPage";
 import { DebugPage } from "./pages/DebugPage";
 
 function AppShell() {
@@ -34,23 +31,18 @@ function AppShell() {
   }
 
   return (
-    <>
-      <main className="flex-1 min-h-0 flex flex-col">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/groups" element={<GroupsPage />} />
-          <Route path="/wallet" element={<WalletPage />} />
-          <Route path="/group/:groupId" element={<GroupDetail />} />
-          <Route path="/group/:groupId/add" element={<AddExpense />} />
-          <Route path="/group/:groupId/expense/:expenseId" element={<ExpenseDetail />} />
-          <Route path="/group/:groupId/expense/:expenseId/edit" element={<AddExpense />} />
-          <Route path="/group/:groupId/settle" element={<SettleUp />} />
-          <Route path="/join/:inviteCode" element={<JoinGroup />} />
-          <Route path="*" element={<Dashboard />} />
-        </Routes>
-      </main>
-      <BottomNav />
-    </>
+    <main className="flex-1 min-h-0 flex flex-col">
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/group/:groupId" element={<GroupDetail />} />
+        <Route path="/group/:groupId/add" element={<AddExpense />} />
+        <Route path="/group/:groupId/expense/:expenseId" element={<ExpenseDetail />} />
+        <Route path="/group/:groupId/expense/:expenseId/edit" element={<AddExpense />} />
+        <Route path="/group/:groupId/settle" element={<SettleUp />} />
+        <Route path="/join/:inviteCode" element={<JoinGroup />} />
+        <Route path="*" element={<Dashboard />} />
+      </Routes>
+    </main>
   );
 }
 

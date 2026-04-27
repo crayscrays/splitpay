@@ -71,9 +71,19 @@ export function SettleUp() {
         [key]: { status: "success", txHash: lastHash },
       }));
     } catch (err: any) {
+      const raw = (err?.message ?? err?.details ?? "").toLowerCase();
+      const isNoGas =
+        raw.includes("gas required exceeds allowance") ||
+        raw.includes("insufficient funds") ||
+        raw.includes("exceeds allowance (0)");
       setPayments((p) => ({
         ...p,
-        [key]: { status: "error", error: err?.message || "Transaction failed" },
+        [key]: {
+          status: "error",
+          error: isNoGas
+            ? "Your wallet has no ETH for gas. Fund it with Base Sepolia ETH from a faucet, then retry."
+            : err?.shortMessage ?? err?.message ?? "Transaction failed",
+        },
       }));
     }
   };
