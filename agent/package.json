@@ -8,7 +8,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@0xchat/miniapp-sdk": "github:crayscrays/0xchat-miniapp-sdk",
+    "@0xchat/miniapp-sdk": "file:../../0xchat-miniapp-sdk",
     "@supabase/supabase-js": "^2.104.1",
     "dotenv": "^16.4.5",
     "express": "^4.21.0"

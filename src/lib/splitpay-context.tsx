@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/app-sdk";
+import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/miniapp-sdk";
 import { bridge } from "./bridge";
 import { computeNetBalances, formatAddress, genCode, publishCode, simplifyDebts, uid, type DebtEdge } from "./utils";
 import { deleteExpenseRemote, fetchExpenses, fetchGroups, fetchMembers, publishExpense, publishGroup, publishMember, supabase } from "./supabase";

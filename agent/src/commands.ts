@@ -23,10 +23,10 @@ import {
 
 import type {
   MessageContext as MsgContext,
-  PaymentContext,
   CardField,
   CardAction,
 } from "@0xchat/miniapp-sdk";
+type PaymentContext = MsgContext;
 
 // ---- Helpers ----
 
@@ -173,7 +173,7 @@ export async function handleJoin(args: string, ctx: MsgContext): Promise<void> {
   const target = chatMembers.find(
     (m) =>
       (m.displayName || "").toLowerCase() === targetName ||
-      m.wallet.toLowerCase() === targetName
+      m.walletAddress.toLowerCase() === targetName
   );
 
   if (!target) {
@@ -181,18 +181,18 @@ export async function handleJoin(args: string, ctx: MsgContext): Promise<void> {
     return;
   }
 
-  if (existingSet.has(target.wallet.toLowerCase())) {
-    await ctx.reply(`${target.displayName || shortAddr(target.wallet)} is already in the group.`);
+  if (existingSet.has(target.walletAddress.toLowerCase())) {
+    await ctx.reply(`${target.displayName || shortAddr(target.walletAddress)} is already in the group.`);
     return;
   }
 
   await publishMember(groupId, {
-    walletAddress: target.wallet,
+    walletAddress: target.walletAddress,
     displayName: target.displayName,
     avatar: target.avatar ?? "",
     roles: [],
   });
-  await ctx.reply(`${target.displayName || shortAddr(target.wallet)} added.`);
+  await ctx.reply(`${target.displayName || shortAddr(target.walletAddress)} added.`);
 }
 
 export async function handleStatus(ctx: MsgContext): Promise<void> {
@@ -260,7 +260,7 @@ export async function handleAdd(args: string, ctx: MsgContext): Promise<void> {
         !chatMembers.some(
           (m) =>
             (m.displayName || "").toLowerCase() === name ||
-            m.wallet.toLowerCase() === name
+            m.walletAddress.toLowerCase() === name
         )
     );
     if (unknownNames.length > 0) {
@@ -285,9 +285,9 @@ export async function handleAdd(args: string, ctx: MsgContext): Promise<void> {
       const cm = chatMembers.find(
         (m) =>
           (m.displayName || "").toLowerCase() === name ||
-          m.wallet.toLowerCase() === name
+          m.walletAddress.toLowerCase() === name
       )!;
-      addToSplit(cm.wallet, cm.displayName, cm.avatar ?? "");
+      addToSplit(cm.walletAddress, cm.displayName, cm.avatar ?? "");
     }
   } else {
     splitMembers = allMembers;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createAppBridge } from "@0xchat/app-sdk";
+import { createAppBridge } from "@0xchat/miniapp-sdk";
 import { USDC_BASE_SEPOLIA } from "@/lib/bridge";
 
 interface Step {
