@@ -9,7 +9,7 @@
     "preview": "vite preview --port 5175"
   },
   "dependencies": {
-    "@0xchat/miniapp-sdk": "file:../0xchat-miniapp-sdk",
+    "@0xchat/miniapp-sdk": "file:./vendor/0xchat-miniapp-sdk",
     "@supabase/supabase-js": "^2.104.1",
     "lucide-react": "^0.445.0",
     "react": "^18.3.1",
