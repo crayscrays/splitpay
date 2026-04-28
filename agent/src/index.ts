@@ -34,8 +34,9 @@ const COMMANDS: SlashCommandDefinition[] = [
 ];
 
 const agent = createAgent({
-  apiKey: process.env.OXCHAT_API_KEY!,
+  apiKey: process.env.AGENT_API_KEY!,
   webhookSecret: process.env.OXCHAT_WEBHOOK_SECRET!,
+  baseUrl: "https://0xchat.cresign.xyz",
 });
 
 agent.on("joined", async (ctx) => {
