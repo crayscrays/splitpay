@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host --port 5175",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --port 5175"
+    "preview": "vite preview --host"
   },
   "dependencies": {
     "@0xchat/miniapp-sdk": "file:./vendor/0xchat-miniapp-sdk",
