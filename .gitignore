@@ -1,6 +1,7 @@
 node_modules
 dist
 !vendor/0xchat-miniapp-sdk/dist
+!vendor/0xchat-app-sdk/dist
 *.log
 .DS_Store
 qa-*.png
