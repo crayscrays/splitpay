@@ -17,6 +17,7 @@ export default defineConfig({
   preview: {
     port: Number(process.env.PORT) || 5175,
     host: true,
+    allowedHosts: "all",
   },
   build: {
     rollupOptions: {
