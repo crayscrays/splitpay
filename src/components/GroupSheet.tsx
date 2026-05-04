@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, Plus } from "lucide-react";
-import type { GroupMember, GroupSummary } from "@0xchat/miniapp-sdk";
+import type { GroupMember, GroupSummary } from "@0xchat/app-sdk";
 import { useSplitPay } from "@/lib/splitpay-context";
 import { MemberAvatar } from "./MemberAvatar";
 

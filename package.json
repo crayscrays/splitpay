@@ -9,7 +9,7 @@
     "start": "serve dist -s -l $PORT"
   },
   "dependencies": {
-    "@0xchat/miniapp-sdk": "file:./vendor/0xchat-miniapp-sdk",
+    "@0xchat/app-sdk": "file:./vendor/0xchat-app-sdk",
     "@supabase/supabase-js": "^2.104.1",
     "lucide-react": "^0.445.0",
     "react": "^18.3.1",

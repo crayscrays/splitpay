@@ -1,4 +1,4 @@
-import type { GroupMember } from "@0xchat/miniapp-sdk";
+import type { GroupMember } from "@0xchat/app-sdk";
 import { Check } from "lucide-react";
 import { MemberAvatar } from "./MemberAvatar";
 import { cn } from "@/lib/utils";
