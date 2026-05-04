@@ -15,6 +15,7 @@ export default defineConfig({
     host: true,
   },
   preview: {
-    port: 5175,
+    port: Number(process.env.PORT) || 5175,
+    host: true,
   },
 });
