@@ -18,4 +18,9 @@ export default defineConfig({
     port: Number(process.env.PORT) || 5175,
     host: true,
   },
+  build: {
+    rollupOptions: {
+      external: ["express"],
+    },
+  },
 });
