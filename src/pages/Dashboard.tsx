@@ -4,7 +4,7 @@ import { useSplitPay } from "@/lib/splitpay-context";
 import { MemberAvatar } from "@/components/MemberAvatar";
 import { GroupCard } from "@/components/GroupCard";
 import { GroupSheet } from "@/components/GroupSheet";
-import { fetchGroups } from "@/lib/supabase";
+import { fetchGroups, supabase } from "@/lib/supabase";
 import { computeNetBalances, formatAddress, formatCurrency, formatUsdc } from "@/lib/utils";
 
 export function Dashboard() {
@@ -22,8 +22,26 @@ export function Dashboard() {
   const handleDebug = async () => {
     const wallet = sp.profile?.walletAddress ?? "";
     setDebugResult("Fetching…");
-    const rows = await fetchGroups(wallet);
-    setDebugResult(JSON.stringify({ wallet, rows }, null, 2));
+    if (!supabase) { setDebugResult("No supabase client"); return; }
+
+    const { data: memberships } = await supabase
+      .from("group_members")
+      .select("group_id")
+      .eq("wallet_address", wallet);
+    const memberGroupIds = (memberships ?? []).map((m: any) => m.group_id);
+
+    const { data: groups } = memberGroupIds.length
+      ? await supabase.from("groups").select("id, name").in("id", memberGroupIds)
+      : { data: [] };
+    const foundIds = new Set((groups ?? []).map((g: any) => g.id));
+    const missingIds = memberGroupIds.filter((id) => !foundIds.has(id));
+
+    setDebugResult(JSON.stringify({
+      wallet,
+      memberGroupIds,
+      groupsFound: groups,
+      missingFromGroupsTable: missingIds,
+    }, null, 2));
   };
 
   const myWallet = sp.profile?.walletAddress ?? "";
