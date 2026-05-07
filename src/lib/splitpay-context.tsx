@@ -402,9 +402,10 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       .channel("splitpay_new_groups")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "group_members", filter: `wallet_address=eq.${myWallet}` },
+        { event: "INSERT", schema: "public", table: "group_members" },
         async (payload) => {
-          const row = payload.new as { group_id: string };
+          const row = payload.new as { group_id: string; wallet_address: string };
+          if (row.wallet_address.toLowerCase() !== myWallet.toLowerCase()) return;
           if (stateRef.current.groups.some((g) => g.id === row.group_id)) return;
           const groupMeta = await fetchGroupById(row.group_id);
           if (!groupMeta) return;

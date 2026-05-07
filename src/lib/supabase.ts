@@ -24,7 +24,7 @@ export async function fetchGroups(walletAddress: string): Promise<{ id: string; 
     const { data: memberships } = await supabase
       .from("group_members")
       .select("group_id")
-      .eq("wallet_address", walletAddress);
+      .ilike("wallet_address", walletAddress);
     if (!memberships?.length) return [];
     const groupIds = memberships.map((m: any) => m.group_id);
     const { data: groups } = await supabase
