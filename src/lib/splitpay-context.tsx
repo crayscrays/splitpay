@@ -258,6 +258,7 @@ interface SplitPayContextValue extends State {
   joinGroup(invite: InviteInfo): Promise<void>;
   makeInviteCode(groupId: string): string; // returns the 6-char code
   makeInviteUrl(groupId: string): string;  // returns the full shareable URL
+  refreshGroups(): Promise<void>;
   refreshAvailableGroups(): Promise<void>;
   shareExpenseToGroup(groupId: string, expense: Expense): Promise<void>;
   getGroup(id: string): GroupData | undefined;
@@ -691,6 +692,44 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     [state.groups, state.profile]
   );
 
+  const refreshGroups: SplitPayContextValue["refreshGroups"] = useCallback(async () => {
+    const wallet = stateRef.current.profile?.walletAddress;
+    if (!wallet) return;
+    const groupMetas = await fetchGroups(wallet);
+    const knownIds = new Set(stateRef.current.groups.map((g) => g.id));
+    const newMetas = groupMetas.filter((m) => !knownIds.has(m.id));
+    for (const meta of newMetas) {
+      const [members, expenses] = await Promise.all([
+        fetchMembers(meta.id),
+        fetchExpenses(meta.id),
+      ]);
+      const sortedExpenses = (expenses as Expense[]).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      dispatch({
+        type: "ADD_GROUP",
+        group: {
+          id: meta.id,
+          name: meta.name,
+          avatar: meta.avatar,
+          inviteCode: meta.inviteCode || genCode(),
+          memberCount: members.length,
+          members,
+          expenses: sortedExpenses,
+          activity: [],
+        },
+      });
+    }
+  }, []);
+
+  // Auto-refresh when the user returns to the tab
+  useEffect(() => {
+    if (!booted) return;
+    const handle = () => { if (document.visibilityState === "visible") refreshGroups(); };
+    document.addEventListener("visibilitychange", handle);
+    return () => document.removeEventListener("visibilitychange", handle);
+  }, [booted, refreshGroups]);
+
   const refreshAvailableGroups: SplitPayContextValue["refreshAvailableGroups"] = useCallback(
     async () => {
       const available = await bridge.listGroups();
@@ -776,6 +815,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
     joinGroup,
     makeInviteCode,
     makeInviteUrl,
+    refreshGroups,
     refreshAvailableGroups,
     shareExpenseToGroup,
     getGroup,

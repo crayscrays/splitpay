@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
+import { Plus, RefreshCw, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
 import { useSplitPay } from "@/lib/splitpay-context";
 import { MemberAvatar } from "@/components/MemberAvatar";
 import { GroupCard } from "@/components/GroupCard";
@@ -9,6 +9,13 @@ import { computeNetBalances, formatAddress, formatCurrency, formatUsdc } from "@
 export function Dashboard() {
   const sp = useSplitPay();
   const [showPicker, setShowPicker] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await sp.refreshGroups();
+    setRefreshing(false);
+  };
 
   const myWallet = sp.profile?.walletAddress ?? "";
 
@@ -83,13 +90,23 @@ export function Dashboard() {
       <section className="px-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="label">Active Groups</h3>
-          <button
-            onClick={() => setShowPicker(true)}
-            className="btn btn-ghost text-xs px-2 py-1 -mr-2"
-            data-testid="button-add-group"
-          >
-            <Plus size={14} /> Add
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="btn btn-ghost text-xs px-2 py-1"
+              aria-label="Refresh groups"
+            >
+              <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+            </button>
+            <button
+              onClick={() => setShowPicker(true)}
+              className="btn btn-ghost text-xs px-2 py-1 -mr-2"
+              data-testid="button-add-group"
+            >
+              <Plus size={14} /> Add
+            </button>
+          </div>
         </div>
 
         {groupsWithBal.length === 0 ? (
