@@ -21,23 +21,25 @@ export async function publishGroup(group: { id: string; name: string; avatar: st
 export async function fetchGroups(walletAddress: string): Promise<{ id: string; name: string; avatar: string; inviteCode: string }[]> {
   if (!supabase) return [];
   try {
-    const { data: memberships } = await supabase
+    const { data: memberships, error: memErr } = await supabase
       .from("group_members")
       .select("group_id")
       .eq("wallet_address", walletAddress);
+    console.log("[supabase] group_members rows:", memberships, "error:", memErr);
     if (!memberships?.length) return [];
     const groupIds = memberships.map((m: any) => m.group_id);
-    const { data: groups } = await supabase
+    const { data: groups, error: grpErr } = await supabase
       .from("groups")
       .select("id, name, avatar, invite_code")
       .in("id", groupIds);
+    console.log("[supabase] groups rows:", groups, "error:", grpErr);
     return (groups ?? []).map((g: any) => ({
       id: g.id,
       name: g.name,
       avatar: g.avatar ?? "",
       inviteCode: g.invite_code ?? "",
     }));
-  } catch { return []; }
+  } catch (e) { console.error("[supabase] fetchGroups error:", e); return []; }
 }
 
 export async function fetchGroupById(groupId: string): Promise<{ id: string; name: string; avatar: string; inviteCode: string } | null> {

@@ -4,17 +4,26 @@ import { useSplitPay } from "@/lib/splitpay-context";
 import { MemberAvatar } from "@/components/MemberAvatar";
 import { GroupCard } from "@/components/GroupCard";
 import { GroupSheet } from "@/components/GroupSheet";
+import { fetchGroups } from "@/lib/supabase";
 import { computeNetBalances, formatAddress, formatCurrency, formatUsdc } from "@/lib/utils";
 
 export function Dashboard() {
   const sp = useSplitPay();
   const [showPicker, setShowPicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [debugResult, setDebugResult] = useState<string | null>(null);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     await sp.refreshGroups();
     setRefreshing(false);
+  };
+
+  const handleDebug = async () => {
+    const wallet = sp.profile?.walletAddress ?? "";
+    setDebugResult("Fetching…");
+    const rows = await fetchGroups(wallet);
+    setDebugResult(JSON.stringify({ wallet, rows }, null, 2));
   };
 
   const myWallet = sp.profile?.walletAddress ?? "";
@@ -137,6 +146,18 @@ export function Dashboard() {
               />
             ))}
           </div>
+        )}
+      </section>
+
+      {/* Temporary debug panel */}
+      <section className="px-4 mt-4">
+        <button onClick={handleDebug} className="btn btn-ghost text-xs px-3 py-1 border border-dashed w-full">
+          Debug: fetch my groups from Supabase
+        </button>
+        {debugResult && (
+          <pre className="mt-2 text-xs bg-surface-2 border border-border rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">
+            {debugResult}
+          </pre>
         )}
       </section>
 
