@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Plus } from "lucide-react";
+import { ChevronLeft, Hash, Plus } from "lucide-react";
 import type { GroupMember, GroupSummary } from "@0xchat/app-sdk";
 import { useSplitPay } from "@/lib/splitpay-context";
 import { MemberAvatar } from "./MemberAvatar";
@@ -10,20 +10,25 @@ interface GroupSheetProps {
 }
 
 export function GroupSheet({ onClose }: GroupSheetProps) {
-  const [view, setView] = useState<"list" | "create">("list");
+  const [view, setView] = useState<"list" | "create" | "join">("list");
 
   if (view === "create") {
     return <CreateView onClose={onClose} onBack={() => setView("list")} />;
   }
-  return <ListView onClose={onClose} onCreateNew={() => setView("create")} />;
+  if (view === "join") {
+    return <JoinView onClose={onClose} onBack={() => setView("list")} />;
+  }
+  return <ListView onClose={onClose} onCreateNew={() => setView("create")} onJoinByCode={() => setView("join")} />;
 }
 
 function ListView({
   onClose,
   onCreateNew,
+  onJoinByCode,
 }: {
   onClose: () => void;
   onCreateNew: () => void;
+  onJoinByCode: () => void;
 }) {
   const sp = useSplitPay();
   const [adding, setAdding] = useState<string | null>(null);
@@ -71,6 +76,21 @@ function ListView({
             </div>
           </button>
 
+          {/* Join by code */}
+          <button
+            onClick={onJoinByCode}
+            className="w-full card p-3 flex items-center gap-3 hover:border-border-strong text-left border border-dashed"
+            data-testid="button-join-by-code"
+          >
+            <div className="h-9 w-9 rounded-full bg-surface-2 border border-border flex items-center justify-center flex-shrink-0">
+              <Hash size={16} className="text-text-muted" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-medium text-text-muted">Join by code</div>
+              <div className="text-xs text-text-dim">Enter a 6-letter invite code</div>
+            </div>
+          </button>
+
           {/* Link from 0xChat */}
           {sp.availableGroups.length > 0 && (
             <>
@@ -99,6 +119,68 @@ function ListView({
               ))}
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JoinView({ onClose, onBack }: { onClose: () => void; onBack: () => void }) {
+  const nav = useNavigate();
+  const [code, setCode] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 100);
+    return () => clearTimeout(t);
+  }, []);
+
+  const handleSubmit = () => {
+    const clean = code.trim().toUpperCase().replace(/[^A-Z]/g, "");
+    if (clean.length !== 6) return;
+    nav(`/join/${clean}`);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-end justify-center">
+      <button
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+        aria-label="Close"
+      />
+      <div className="relative w-full max-w-[480px] bg-surface border-t border-border rounded-t-2xl fade-in">
+        <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+          <button onClick={onBack} className="btn btn-ghost p-1.5 -ml-1" aria-label="Back">
+            <ChevronLeft size={16} />
+          </button>
+          <h3 className="font-semibold flex-1">Join by code</h3>
+          <button onClick={onClose} className="btn btn-ghost text-sm px-3 py-1">
+            Close
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <p className="text-sm text-text-muted">
+            Enter the 6-letter invite code shared by the group creator.
+          </p>
+          <input
+            ref={inputRef}
+            value={code}
+            onChange={(e) =>
+              setCode(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6))
+            }
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            placeholder="ABCXYZ"
+            className="input w-full text-center text-2xl font-mono tracking-[0.35em] py-3 uppercase"
+            maxLength={6}
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={code.replace(/[^A-Z]/g, "").length !== 6}
+            className="btn btn-primary w-full py-3 text-sm font-semibold"
+          >
+            Join group
+          </button>
         </div>
       </div>
     </div>
