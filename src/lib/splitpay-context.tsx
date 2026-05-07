@@ -12,7 +12,7 @@ import {
 import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/app-sdk";
 import { bridge } from "./bridge";
 import { computeNetBalances, formatAddress, genCode, publishCode, simplifyDebts, uid, type DebtEdge } from "./utils";
-import { deleteExpenseRemote, fetchExpenses, fetchGroups, fetchMembers, publishExpense, publishGroup, publishMember, supabase } from "./supabase";
+import { deleteExpenseRemote, fetchExpenses, fetchGroupById, fetchGroups, fetchMembers, publishExpense, publishGroup, publishMember, supabase } from "./supabase";
 
 // ---------- Types ----------
 
@@ -389,6 +389,50 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
 
     return () => { sb.removeChannel(channel); };
   }, [booted, state.groups.length]);
+
+  // Real-time: detect when an external agent adds the current user to a new group
+  useEffect(() => {
+    if (!booted || !state.profile?.walletAddress) return;
+    const sb = supabase;
+    if (!sb) return;
+    const myWallet = state.profile.walletAddress;
+
+    const channel = sb
+      .channel("splitpay_new_groups")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "group_members", filter: `wallet_address=eq.${myWallet}` },
+        async (payload) => {
+          const row = payload.new as { group_id: string };
+          if (stateRef.current.groups.some((g) => g.id === row.group_id)) return;
+          const groupMeta = await fetchGroupById(row.group_id);
+          if (!groupMeta) return;
+          const [members, expenses] = await Promise.all([
+            fetchMembers(row.group_id),
+            fetchExpenses(row.group_id),
+          ]);
+          const sortedExpenses = (expenses as Expense[]).sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          dispatch({
+            type: "ADD_GROUP",
+            group: {
+              id: groupMeta.id,
+              name: groupMeta.name,
+              avatar: groupMeta.avatar,
+              inviteCode: groupMeta.inviteCode || genCode(),
+              memberCount: members.length,
+              members,
+              expenses: sortedExpenses,
+              activity: [],
+            },
+          });
+        }
+      )
+      .subscribe();
+
+    return () => { sb.removeChannel(channel); };
+  }, [booted, state.profile?.walletAddress]);
 
   const addExpense: SplitPayContextValue["addExpense"] = useCallback((input) => {
     const expense: Expense = {

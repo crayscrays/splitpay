@@ -40,6 +40,19 @@ export async function fetchGroups(walletAddress: string): Promise<{ id: string; 
   } catch { return []; }
 }
 
+export async function fetchGroupById(groupId: string): Promise<{ id: string; name: string; avatar: string; inviteCode: string } | null> {
+  if (!supabase) return null;
+  try {
+    const { data } = await supabase
+      .from("groups")
+      .select("id, name, avatar, invite_code")
+      .eq("id", groupId)
+      .single();
+    if (!data) return null;
+    return { id: data.id, name: data.name, avatar: data.avatar ?? "", inviteCode: data.invite_code ?? "" };
+  } catch { return null; }
+}
+
 // ---------- Members ----------
 
 export async function publishMember(groupId: string, member: GroupMember): Promise<void> {
