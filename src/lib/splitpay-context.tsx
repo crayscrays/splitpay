@@ -293,9 +293,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
 
       // Load all groups and their data from Supabase
-      console.log("[splitpay] wallet:", profile.walletAddress);
       const groupMetas = await fetchGroups(profile.walletAddress);
-      console.log("[splitpay] fetchGroups result:", groupMetas);
       const saved = await Promise.all(
         groupMetas.map(async (meta) => {
           const [remoteMembers, remoteExpenses] = await Promise.all([

@@ -21,25 +21,34 @@ export async function publishGroup(group: { id: string; name: string; avatar: st
 export async function fetchGroups(walletAddress: string): Promise<{ id: string; name: string; avatar: string; inviteCode: string }[]> {
   if (!supabase) return [];
   try {
-    const { data: memberships, error: memErr } = await supabase
+    const { data: memberships } = await supabase
       .from("group_members")
       .select("group_id")
       .eq("wallet_address", walletAddress);
-    console.log("[supabase] group_members rows:", memberships, "error:", memErr);
     if (!memberships?.length) return [];
     const groupIds = memberships.map((m: any) => m.group_id);
-    const { data: groups, error: grpErr } = await supabase
+    const { data: groups } = await supabase
       .from("groups")
       .select("id, name, avatar, invite_code")
       .in("id", groupIds);
-    console.log("[supabase] groups rows:", groups, "error:", grpErr);
-    return (groups ?? []).map((g: any) => ({
+    const found = groups ?? [];
+    const foundIds = new Set(found.map((g: any) => g.id));
+
+    // Repair: upsert stub rows for any group_id that has no groups entry
+    const missingIds = groupIds.filter((id) => !foundIds.has(id));
+    if (missingIds.length > 0) {
+      const stubs = missingIds.map((id) => ({ id, name: id, avatar: "", invite_code: "" }));
+      await supabase.from("groups").upsert(stubs, { onConflict: "id" });
+      stubs.forEach((s) => found.push(s));
+    }
+
+    return found.map((g: any) => ({
       id: g.id,
-      name: g.name,
+      name: g.name ?? g.id,
       avatar: g.avatar ?? "",
       inviteCode: g.invite_code ?? "",
     }));
-  } catch (e) { console.error("[supabase] fetchGroups error:", e); return []; }
+  } catch { return []; }
 }
 
 export async function fetchGroupById(groupId: string): Promise<{ id: string; name: string; avatar: string; inviteCode: string } | null> {
