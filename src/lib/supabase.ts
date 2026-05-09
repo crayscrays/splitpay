@@ -104,7 +104,7 @@ export async function fetchMembers(groupId: string): Promise<GroupMember[]> {
 export async function publishExpense(expense: Record<string, any>): Promise<void> {
   if (!supabase) return;
   try {
-    const normalized = {
+    const normalized: Record<string, any> = {
       ...expense,
       paidBy: expense.paidBy ? normalizeWallet(expense.paidBy) : expense.paidBy,
       splits: Array.isArray(expense.splits)
