@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { GroupMember } from "@0xchat/app-sdk";
+import { normalizeWallet } from "./utils";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -72,7 +73,7 @@ export async function publishMember(groupId: string, member: GroupMember): Promi
     await supabase.from("group_members").upsert(
       {
         group_id: groupId,
-        wallet_address: member.walletAddress,
+        wallet_address: normalizeWallet(member.walletAddress),
         display_name: member.displayName ?? "",
         avatar: member.avatar ?? "",
         roles: member.roles ?? [],
@@ -90,7 +91,7 @@ export async function fetchMembers(groupId: string): Promise<GroupMember[]> {
       .select("wallet_address, display_name, avatar, roles")
       .eq("group_id", groupId);
     return (data ?? []).map((r) => ({
-      walletAddress: r.wallet_address,
+      walletAddress: normalizeWallet(r.wallet_address),
       displayName: r.display_name,
       avatar: r.avatar,
       roles: r.roles,
@@ -103,10 +104,17 @@ export async function fetchMembers(groupId: string): Promise<GroupMember[]> {
 export async function publishExpense(expense: Record<string, any>): Promise<void> {
   if (!supabase) return;
   try {
+    const normalized = {
+      ...expense,
+      paidBy: expense.paidBy ? normalizeWallet(expense.paidBy) : expense.paidBy,
+      splits: Array.isArray(expense.splits)
+        ? expense.splits.map((s: any) => ({ ...s, wallet: s.wallet ? normalizeWallet(s.wallet) : s.wallet }))
+        : expense.splits,
+    };
     await supabase.from("group_expenses").upsert({
-      id: expense.id,
-      group_id: expense.groupId,
-      data: expense,
+      id: normalized.id,
+      group_id: normalized.groupId,
+      data: normalized,
       updated_at: new Date().toISOString(),
     });
   } catch {}
@@ -126,6 +134,16 @@ export async function fetchExpenses(groupId: string): Promise<Record<string, any
       .from("group_expenses")
       .select("data")
       .eq("group_id", groupId);
-    return (data ?? []).map((r) => r.data);
+    return (data ?? []).map((r) => {
+      const e = r.data;
+      if (!e) return e;
+      return {
+        ...e,
+        paidBy: e.paidBy ? normalizeWallet(e.paidBy) : e.paidBy,
+        splits: Array.isArray(e.splits)
+          ? e.splits.map((s: any) => ({ ...s, wallet: s.wallet ? normalizeWallet(s.wallet) : s.wallet }))
+          : e.splits,
+      };
+    });
   } catch { return []; }
 }

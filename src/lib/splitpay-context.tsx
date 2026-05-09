@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { GroupMember, GroupSummary, UserProfile } from "@0xchat/app-sdk";
 import { bridge } from "./bridge";
-import { computeNetBalances, formatAddress, genCode, publishCode, simplifyDebts, uid, type DebtEdge } from "./utils";
+import { computeNetBalances, formatAddress, genCode, normalizeWallet, publishCode, simplifyDebts, uid, type DebtEdge } from "./utils";
 import { deleteExpenseRemote, fetchExpenses, fetchGroupById, fetchGroups, fetchMembers, publishExpense, publishGroup, publishMember, supabase } from "./supabase";
 
 // ---------- Types ----------
@@ -319,7 +319,7 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
       dispatch({
         type: "INIT",
         payload: {
-          profile,
+          profile: { ...profile, walletAddress: normalizeWallet(profile.walletAddress) },
           balance,
           groups: saved,
           mode: "live",

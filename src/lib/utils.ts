@@ -1,3 +1,5 @@
+export const normalizeWallet = (w: string) => w.toLowerCase();
+
 // ---------- Formatting ----------
 
 export function formatAddress(addr: string, chars = 4): string {
