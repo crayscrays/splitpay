@@ -749,13 +749,14 @@ export function SplitPayProvider({ children }: { children: ReactNode }) {
         groupId,
         channelId: groupId,
         card: {
+          type: "app_card",
           title: expense.description,
           subtitle: `$${expense.amount.toFixed(2)} · split ${expense.splitType}`,
           fields: [
             { label: "Amount", value: `$${expense.amount.toFixed(2)} USDC` },
             { label: "Split", value: `${expense.splits.length} people` },
           ],
-          action: { label: "Open in SplitPay" },
+          actions: [{ id: "open", label: "Open in SplitPay", kind: "open_app", appSlug: "splitpay" }],
         },
       });
     },

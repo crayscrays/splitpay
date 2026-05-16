@@ -1,5 +1,5 @@
-import { createAppBridge, type AppBridge } from "@0xchat/app-sdk";
-import type { UserProfile, GroupSummary, GroupMember, Contact, AppCard } from "@0xchat/app-sdk";
+import { createAppBridge, type AppBridge } from "@bevo/app-sdk";
+import type { UserProfile, GroupSummary, GroupMember, Contact, AppCard } from "@bevo/app-sdk";
 
 // USDC on Base Sepolia
 export const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";

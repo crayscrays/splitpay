@@ -1,0 +1,39 @@
+{
+  "name": "@bevo/app-sdk",
+  "version": "0.1.0",
+  "description": "Build mini-apps on Bevo — wallet, identity, social graph, and navigation from the browser.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "bevo",
+    "sdk",
+    "mini-app",
+    "web3",
+    "nostr",
+    "bridge"
+  ],
+  "author": "bevo",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.19.39",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist"
+  ]
+}
