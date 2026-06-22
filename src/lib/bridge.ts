@@ -84,21 +84,27 @@ class BridgeClient {
 
   async sendTransaction(params: { to: string; token: string; amount: string }): Promise<string> {
     if (!this.bevo) throw new Error("Not connected to Bevo.");
+    const proxyBase = import.meta.env.VITE_AGENT_URL ?? "https://splitpayvp-production.up.railway.app";
     try {
-      const result = await this.bevo.api.transferTokens({
-        toUserWallet: params.to,
-        amountEth: parseFloat(params.amount),
-        token: params.token as "ETH" | "USDC" | "USDT",
-        fromWallet: "personal",
+      const res = await fetch(`${proxyBase}/proxy/wallet/transfer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.bevo.context.authToken}`,
+        },
+        body: JSON.stringify({
+          chainId: 8453,
+          toUserWallet: params.to,
+          amountEth: parseFloat(params.amount),
+          token: params.token,
+          fromWallet: "personal",
+        }),
       });
-      return result.txHash;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `Transfer failed: ${res.status}`);
+      return data.txHash;
     } catch (err: any) {
-      console.error("[bridge] transferTokens failed:", {
-        message: err?.message,
-        status: err?.status,
-        cause: err?.cause,
-        raw: err,
-      });
+      console.error("[bridge] sendTransaction failed:", err?.message);
       throw err;
     }
   }
