@@ -77,7 +77,9 @@ export function WalletPage() {
           View on BaseScan <ExternalLink size={13} />
         </a>
 
-
+        <a href="#/debug" className="text-center text-xs text-text-muted py-2 block">
+          Debug
+        </a>
       </div>
     </div>
   );
