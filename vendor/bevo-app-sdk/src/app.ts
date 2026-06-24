@@ -11,7 +11,47 @@ import type {
   BevoPermission,
   BevoContact,
   BevoAgentPermission,
+  SignTransactionParams,
+  SendTokensParams,
+  MiniAppTxResult,
 } from "./types.js";
+
+// ── Host-bridge promise map ───────────────────────────────────────────────────
+// Each pending request stores its resolve/reject here, keyed by a unique ID.
+// The Flutter host calls window._bevoResolve(id, result) to settle the promise.
+
+type PendingResolver = {
+  resolve: (result: MiniAppTxResult) => void;
+  reject: (err: Error) => void;
+};
+const _pending = new Map<string, PendingResolver>();
+let _reqCounter = 0;
+
+function _installResolver() {
+  if (typeof window === "undefined") return;
+  window._bevoResolve = (id, result) => {
+    const pending = _pending.get(id);
+    if (!pending) return;
+    _pending.delete(id);
+    if (result.success && result.txHash) {
+      pending.resolve({ txHash: result.txHash });
+    } else {
+      pending.reject(new Error(result.error ?? "Transaction rejected by user"));
+    }
+  };
+}
+
+function _postToHost(type: string, params: unknown): Promise<MiniAppTxResult> {
+  if (typeof window === "undefined" || !window.BevoHost) {
+    return Promise.reject(new Error("[bevo-app-sdk] BevoHost channel not available (not inside Bevo app)"));
+  }
+  _installResolver();
+  const id = `bevo_req_${++_reqCounter}_${Date.now()}`;
+  return new Promise((resolve, reject) => {
+    _pending.set(id, { resolve, reject });
+    window.BevoHost!.postMessage(JSON.stringify({ type, id, params }));
+  });
+}
 
 // ── BevoApiClient ─────────────────────────────────────────────────────────────
 
@@ -420,5 +460,45 @@ export class BevoMiniApp {
         }
       });
     });
+  }
+
+  /**
+   * Ask the host app to sign and broadcast an arbitrary EVM transaction.
+   *
+   * The host presents a review sheet showing the target contract, value, and
+   * calldata. The user must explicitly confirm before anything is signed.
+   *
+   * Resolves with `{ txHash }` on approval; rejects if the user cancels or
+   * an error occurs.
+   *
+   * @example
+   * const { txHash } = await bevo.requestSignTransaction({
+   *   to: "0xContractAddress",
+   *   data: "0xabcdef...",
+   *   value: "0x0",
+   *   description: "Mint NFT #42",
+   * });
+   */
+  requestSignTransaction(params: SignTransactionParams): Promise<MiniAppTxResult> {
+    return _postToHost("signTransaction", params);
+  }
+
+  /**
+   * Ask the host app to open the native Send sheet pre-filled with the given
+   * recipient and amount. The user still taps "Send" to confirm — this reuses
+   * the exact same UI as sending from the wallet screen.
+   *
+   * Resolves with `{ txHash }` after the user completes the send; rejects if
+   * cancelled or an error occurs.
+   *
+   * @example
+   * const { txHash } = await bevo.requestSendTokens({
+   *   toUserHandle: "alice",
+   *   amount: 5,
+   *   token: "USDC",
+   * });
+   */
+  requestSendTokens(params: SendTokensParams): Promise<MiniAppTxResult> {
+    return _postToHost("sendTokens", params);
   }
 }

@@ -123,9 +123,46 @@ interface BevoAgentPermission {
     revokedAt: string | null;
 }
 type BevoPermission = "wallet.read" | "wallet.send" | "wallet.sign" | "user.read" | "contacts.read" | "groups.read" | "chat.write" | "bots.manage";
+interface SignTransactionParams {
+    /** Target contract or EOA address (0x…) */
+    to: string;
+    /** ABI-encoded calldata (0x…) */
+    data: string;
+    /** Value in wei as hex string, e.g. "0x0" (default: "0x0") */
+    value?: string;
+    /** EVM chain ID. Defaults to 8453 (Base mainnet). */
+    chainId?: number;
+    /** Human-readable description shown in the approval sheet. */
+    description?: string;
+}
+interface SendTokensParams {
+    /** Bevo @handle of the recipient (without the @). */
+    toUserHandle?: string;
+    /** Raw 0x… wallet address of the recipient. */
+    toWallet?: string;
+    /** Amount in human-readable units (e.g. 0.01 for 0.01 ETH). */
+    amount: number;
+    /** Token symbol. Defaults to "ETH". */
+    token?: "ETH" | "USDC" | "USDT";
+    /** Human-readable description shown in the send sheet. */
+    description?: string;
+}
+interface MiniAppTxResult {
+    txHash: string;
+}
 declare global {
     interface Window {
         BevoContext?: BevoContext;
+        /** Flutter JS channel — injected by the host app. */
+        BevoHost?: {
+            postMessage(msg: string): void;
+        };
+        /** Callback map populated by the SDK; resolved by the host app. */
+        _bevoResolve?: (id: string, result: {
+            success: boolean;
+            txHash?: string;
+            error?: string;
+        }) => void;
     }
     interface WindowEventMap {
         "bevo:context-updated": CustomEvent<BevoContext>;
@@ -289,6 +326,40 @@ declare class BevoMiniApp {
      * app finishes its background fetch. Rejects after `timeoutMs`.
      */
     waitForAgent(timeoutMs?: number): Promise<AgentInfo>;
+    /**
+     * Ask the host app to sign and broadcast an arbitrary EVM transaction.
+     *
+     * The host presents a review sheet showing the target contract, value, and
+     * calldata. The user must explicitly confirm before anything is signed.
+     *
+     * Resolves with `{ txHash }` on approval; rejects if the user cancels or
+     * an error occurs.
+     *
+     * @example
+     * const { txHash } = await bevo.requestSignTransaction({
+     *   to: "0xContractAddress",
+     *   data: "0xabcdef...",
+     *   value: "0x0",
+     *   description: "Mint NFT #42",
+     * });
+     */
+    requestSignTransaction(params: SignTransactionParams): Promise<MiniAppTxResult>;
+    /**
+     * Ask the host app to open the native Send sheet pre-filled with the given
+     * recipient and amount. The user still taps "Send" to confirm — this reuses
+     * the exact same UI as sending from the wallet screen.
+     *
+     * Resolves with `{ txHash }` after the user completes the send; rejects if
+     * cancelled or an error occurs.
+     *
+     * @example
+     * const { txHash } = await bevo.requestSendTokens({
+     *   toUserHandle: "alice",
+     *   amount: 5,
+     *   token: "USDC",
+     * });
+     */
+    requestSendTokens(params: SendTokensParams): Promise<MiniAppTxResult>;
 }
 
-export { type AgentInfo, type AttachmentMessage, type BevoAgentPermission, BevoApiClient, type BevoApp, type BevoContact, type BevoContext, type BevoConversation, type BevoGroup, type BevoGroupMessage, type BevoMessage, BevoMiniApp, type BevoPermission, type UserProfile, type WalletBalances };
+export { type AgentInfo, type AttachmentMessage, type BevoAgentPermission, BevoApiClient, type BevoApp, type BevoContact, type BevoContext, type BevoConversation, type BevoGroup, type BevoGroupMessage, type BevoMessage, BevoMiniApp, type BevoPermission, type MiniAppTxResult, type SendTokensParams, type SignTransactionParams, type UserProfile, type WalletBalances };

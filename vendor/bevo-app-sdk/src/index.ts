@@ -14,4 +14,7 @@ export type {
   BevoContact,
   BevoAgentPermission,
   AttachmentMessage,
+  SignTransactionParams,
+  SendTokensParams,
+  MiniAppTxResult,
 } from "./types.js";

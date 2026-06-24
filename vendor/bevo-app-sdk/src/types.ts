@@ -167,11 +167,47 @@ export type BevoPermission =
   | "chat.write"
   | "bots.manage";
 
+// ── Miniapp transaction requests ─────────────────────────────────────────────
+
+export interface SignTransactionParams {
+  /** Target contract or EOA address (0x…) */
+  to: string;
+  /** ABI-encoded calldata (0x…) */
+  data: string;
+  /** Value in wei as hex string, e.g. "0x0" (default: "0x0") */
+  value?: string;
+  /** EVM chain ID. Defaults to 8453 (Base mainnet). */
+  chainId?: number;
+  /** Human-readable description shown in the approval sheet. */
+  description?: string;
+}
+
+export interface SendTokensParams {
+  /** Bevo @handle of the recipient (without the @). */
+  toUserHandle?: string;
+  /** Raw 0x… wallet address of the recipient. */
+  toWallet?: string;
+  /** Amount in human-readable units (e.g. 0.01 for 0.01 ETH). */
+  amount: number;
+  /** Token symbol. Defaults to "ETH". */
+  token?: "ETH" | "USDC" | "USDT";
+  /** Human-readable description shown in the send sheet. */
+  description?: string;
+}
+
+export interface MiniAppTxResult {
+  txHash: string;
+}
+
 // ── Global window extension ───────────────────────────────────────────────────
 
 declare global {
   interface Window {
     BevoContext?: BevoContext;
+    /** Flutter JS channel — injected by the host app. */
+    BevoHost?: { postMessage(msg: string): void };
+    /** Callback map populated by the SDK; resolved by the host app. */
+    _bevoResolve?: (id: string, result: { success: boolean; txHash?: string; error?: string }) => void;
   }
   interface WindowEventMap {
     "bevo:context-updated": CustomEvent<BevoContext>;
