@@ -38,18 +38,22 @@ export const MOCK_CONTACTS: Contact[] = [
 // ---------- Bridge client ----------
 
 class BridgeClient {
-  private bevo: BevoMiniApp | null = null;
+  private _bevo: BevoMiniApp | null = null;
+  private _bevoReady = false;
 
-  constructor() {
+  private get bevo(): BevoMiniApp | null {
+    if (this._bevoReady) return this._bevo;
+    this._bevoReady = true;
     if (typeof window !== "undefined") {
       try {
-        this.bevo = BevoMiniApp.isInsideBevo
+        this._bevo = BevoMiniApp.isInsideBevo
           ? BevoMiniApp.init()
           : BevoMiniApp.mock();
       } catch {
-        this.bevo = null;
+        this._bevo = null;
       }
     }
+    return this._bevo;
   }
 
   get apiBase(): string {
